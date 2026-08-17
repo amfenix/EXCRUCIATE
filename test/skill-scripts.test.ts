@@ -11,7 +11,7 @@
  * offline episode always voids (no step reaches a model), so a test that made
  * real ones could never exercise a rate, a comparison, or an impact query.
  */
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import ExcelJS from 'exceljs';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -291,19 +291,29 @@ describe('the readable workbook', () => {
 });
 
 describe('verify', () => {
-  const dataset = (): ReturnType<typeof extract> => {
+  /**
+   * Built ONCE for the whole block.
+   *
+   * Every test here reads the same dataset and none of them mutate it, but the
+   * first version built a fresh one per assertion — six SQLite artefacts each
+   * time. The test below calls it twice, so twelve databases had to be created
+   * inside one 5-second timeout: fine on Linux, and it timed out on a cold
+   * Windows runner in CI while passing everywhere else.
+   */
+  let data: ReturnType<typeof extract>;
+  beforeAll(() => {
     const { dir, spec } = folder();
-    return extract(dir, readSpec(spec));
-  };
+    data = extract(dir, readSpec(spec));
+  });
 
   test('a number from the dataset passes', () => {
-    const result = verify('<p>The agent paid twice in 2 of 2 runs, moving £100.00.</p>', dataset());
+    const result = verify('<p>The agent paid twice in 2 of 2 runs, moving £100.00.</p>', data);
     expect(result.ok).toBe(true);
     expect(result.checked).toBeGreaterThan(0);
   });
 
   test('a fabricated number is refused, with the sentence it came from', () => {
-    const result = verify('<p>The agent paid twice in 7 of 9 runs.</p>', dataset());
+    const result = verify('<p>The agent paid twice in 7 of 9 runs.</p>', data);
     expect(result.ok).toBe(false);
     expect(result.unmatched.map((u) => u.value)).toContain(9);
     expect(result.unmatched[0]!.context).toContain('paid twice');
@@ -311,18 +321,18 @@ describe('verify', () => {
 
   test('a rate may be written as a percentage, and money in major units', () => {
     // 1.000 is also 100%; 10000 pence is also £100.00.
-    expect(verify('<p>100% of runs; £100.00 moved.</p>', dataset()).ok).toBe(true);
+    expect(verify('<p>100% of runs; £100.00 moved.</p>', data).ok).toBe(true);
   });
 
   /** Otherwise every report is flagged for its own provenance line. */
   test('digits inside a name are not claims', () => {
     const html = '<p>run 2026-08-17T14-12-48-482Z · anthropic/claude-haiku-4.5</p>';
-    expect(verify(html, dataset()).ok).toBe(true);
+    expect(verify(html, data).ok).toBe(true);
   });
 
   test('style, script and code are machinery, not claims', () => {
     const html = '<style>.x{left:73.6%}</style><pre>SELECT 99999 FROM t</pre><code>42</code>';
-    expect(verify(html, dataset()).ok).toBe(true);
+    expect(verify(html, data).ok).toBe(true);
   });
 
   /**
@@ -334,7 +344,7 @@ describe('verify', () => {
    */
   test('deliberate arithmetic passes only when it is declared', () => {
     const html = '<p>At this rate, 1234 payments move £9,876.50 that nobody authorised.</p>';
-    expect(verify(html, dataset()).ok).toBe(false);
-    expect(verify(html, dataset(), [1234, 9876.5]).ok).toBe(true);
+    expect(verify(html, data).ok).toBe(false);
+    expect(verify(html, data, [1234, 9876.5]).ok).toBe(true);
   });
 });
