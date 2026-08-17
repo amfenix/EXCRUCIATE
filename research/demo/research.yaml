@@ -1,0 +1,10 @@
+# Everything true of every episode. What varies lives in episodes.xlsx.
+name: payments-under-failure
+surface: tools          # one frame for the whole research
+mode: fn                # ours; the model cannot tell
+fixture: fixtures/demo
+tasks: tasks
+out: results            # a timestamped folder is made inside this
+toolTimeout: 30s
+concurrency: 4
+preflight: yes

@@ -1,0 +1,7 @@
+# Store text as LF in the repository whatever the checkout does locally, so a
+# Windows working copy and a Linux CI runner see the same file.
+* text=auto eol=lf
+
+# Binary — never touch these.
+*.xlsx binary
+*.sqlite binary

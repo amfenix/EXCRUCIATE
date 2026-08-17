@@ -1,0 +1,44 @@
+# Lint, typecheck and test on every push and pull request.
+#
+# On all three desktop platforms, because most of what this tool does is spawn
+# processes, bind ports and open SQLite files — the things that differ per
+# platform. A Linux-only CI would not have caught the handler launcher.
+name: ci
+
+on:
+  push:
+    branches: ['**']
+    tags-ignore: ['v*'] # a tag runs release.yml, which verifies the same way
+  pull_request:
+
+env:
+  BUN_VERSION: 1.3.14
+
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+
+      - run: bun run lint
+      - run: bun run typecheck
+
+      # The live tests need a key and skip without one, so a fork's PR runs the
+      # rest rather than failing on a secret it cannot have.
+      - run: bun test test
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      # The shipped artefact: a compiled binary launching a TypeScript handler
+      # cannot work by accident, because there is no bun on PATH for it to shell
+      # out to.
+      - run: bun run build
+      - run: bun test test/binary.test.ts

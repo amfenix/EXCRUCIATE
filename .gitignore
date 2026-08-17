@@ -1,0 +1,35 @@
+node_modules/
+
+# Compiled binaries — built by `bun run build`, published by the release action.
+dist/
+
+# Run output. A results folder is a record, not source: it holds one .sqlite per
+# episode plus handler logs, and it grows without bound. Kept on disk, never
+# committed.
+results/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Researches are local work — except the demo, which ships as the worked example
+# the README walks through, and which owns its own fixture.
+research/*
+!research/demo
+
+# ONE exception to the two rules above: the demo's committed run, so a reader can
+# see real output without spending anything. The spreadsheet and the per-episode
+# trails only — the .sqlite artefacts are 1.9 MB of binaries that regenerate on
+# every run, and `excruciate run research/demo` reproduces them.
+!research/demo/results/
+!research/demo/results/*/
+!research/demo/results/*/results.xlsx
+!research/demo/results/*/logs/
+!research/demo/results/*/logs/*.log
+
+# Not the run's copies of its inputs: byte-identical to the demo's own
+# research.yaml and episodes.xlsx, two directories up.
+research/demo/results/*/inputs/
+
+# Never: a key belongs in the OS keychain.
+.env
+.env.*
