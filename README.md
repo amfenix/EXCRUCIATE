@@ -198,6 +198,22 @@ a real `results.xlsx` and all 25 trails without spending anything. The
 per-episode `.sqlite` files are not — 1.9 MB of binaries that regenerate every
 run — so `episodes/` is empty there until you run it yourself.
 
+## From a business question to a report
+
+`skills/payments-risk-research/` is a Claude skill that drives this tool from
+both ends: a business story and a set of suspicions become a hypothesis table, a
+task and a workbook; the finished artefacts become a spreadsheet in business
+language and a report.
+
+```sh
+cp -r skills/payments-risk-research ~/.claude/skills/     # available everywhere
+```
+
+The rule it exists to enforce is that **claims are written down before the run**
+and every figure is extracted by a script — `scripts/verify.ts` refuses a report
+containing a number that is not in the dataset. Design and reasoning:
+[the business loop](docs/design/business-loop.md).
+
 ## The guarantees
 
 These are the things the test suite exists to defend.

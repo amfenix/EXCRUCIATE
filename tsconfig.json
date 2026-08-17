@@ -17,5 +17,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src", "test", "scripts", "research/*/fixtures"]
+  "include": ["src", "test", "scripts", "skills/*/scripts", "research/*/fixtures"]
 }
