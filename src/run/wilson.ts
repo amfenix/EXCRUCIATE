@@ -39,3 +39,7 @@ export function wilson(count: number, n: number, z = 1.96): Rate {
 /** `3/17  0.176  [0.062, 0.410]` */
 export const formatRate = (r: Rate): string =>
   `${r.count}/${r.n}  ${r.rate.toFixed(3)}  [${r.lo.toFixed(3)}, ${r.hi.toFixed(3)}]`;
+
+/** `0.176  [0.062, 0.410]` — for when the counts are already spelled out. */
+export const formatBounds = (r: Rate): string =>
+  `${r.rate.toFixed(3)}  [${r.lo.toFixed(3)}, ${r.hi.toFixed(3)}]`;

@@ -23,6 +23,7 @@ import { grade, validateChecks } from './grade.ts';
 import { writeGrade, writeTranscript } from './transcript.ts';
 import { isSay } from './types.ts';
 import { resolveEpisode } from './text.ts';
+import { NO_SPEND, addSpend, priceUsage } from '../cost.ts';
 import { formatTrail } from './trail.ts';
 import type { AgentLoop } from '@combycode/llm-sdk';
 import type { AuditRow, JournalRow } from '../types.ts';
@@ -32,6 +33,7 @@ import type { Surface } from '../surface/types.ts';
 import type { Clock, Statement } from '../types.ts';
 import type { ActiveFault } from '../fault/types.ts';
 import type { Faulty } from '../fault/dispatch.ts';
+import type { Spend } from '../cost.ts';
 import type { Effect, Episode, EpisodeResult, Say, Step, StepRecord } from './types.ts';
 
 /** Kept for future per-run wiring; keys are NOT here — they live on the engine. */
@@ -81,7 +83,7 @@ export async function runEpisode(raw: Episode, _opts: RunOptions = {}): Promise<
     // what the model DID in the same language it asks about what changed.
     writeTranscript(session.world, steps);
     const verdict = grade(session.world, spec.grade, steps, faulty.unfired());
-    writeGrade(session.world, spec, verdict);
+    writeGrade(session.world, spec, verdict, episodeSpend(steps));
 
     const result: EpisodeResult = {
       id: spec.id,
@@ -89,6 +91,7 @@ export async function runEpisode(raw: Episode, _opts: RunOptions = {}): Promise<
       surface: spec.surface,
       model: spec.model,
       memory: spec.memory,
+      spend: episodeSpend(steps),
       steps,
       grade: verdict,
       journal: session.world.journalRows(),
@@ -104,6 +107,15 @@ export async function runEpisode(raw: Episode, _opts: RunOptions = {}): Promise<
     await close(session);
   }
 }
+
+/**
+ * What the whole repetition consumed.
+ *
+ * Effect steps and unreached say-steps contribute nothing — they never called a
+ * model. Only steps that actually spent are added.
+ */
+const episodeSpend = (steps: StepRecord[]): Spend =>
+  steps.reduce((total, s) => (s.kind === 'say' && s.spend !== undefined ? addSpend(total, s.spend) : total), NO_SPEND);
 
 function writeTrail(spec: Episode, result: EpisodeResult): void {
   try {
@@ -161,7 +173,7 @@ async function runSteps(
     // `fresh` builds a new one per step: nothing about the agent's identity
     // survives the call, which is the condition being probed.
     agent ??= agentFor(surface, agentSpec(spec, () => system));
-    steps.push(await runSay(step, index, clock, surface, agent, faulty, watch));
+    steps.push(await runSay(step, index, clock, surface, agent, faulty, watch, spec.model));
 
     if (spec.memory === 'fresh') {
       forget(spec, surface, agent);
@@ -187,7 +199,8 @@ async function runSay(
   surface: Surface,
   agent: AgentLoop,
   faulty: Faulty,
-  watch: (fn: ((op: string) => void) | null) => void
+  watch: (fn: ((op: string) => void) | null) => void,
+  model: string
 ): Promise<StepRecord> {
   // Slice this step's calls and firings out of the running records, so a report
   // can say what happened WHEN without a second bookkeeping mechanism.
@@ -214,10 +227,19 @@ async function runSay(
     }) as StepRecord;
 
   try {
-    return done({ answer: textOf(await agent.complete(step.say)) });
+    const response = await agent.complete(step.say);
+    // `usage` on the response is CUMULATIVE over every turn of this agent run,
+    // not just the last one — measured against a 3-turn episode, where it
+    // agreed exactly with the SDK's own collector.
+    return done({ answer: textOf(response), spend: priceUsage(model, response.usage) });
   } catch (e) {
     // The model failing to be REACHED is our problem, and voids the episode.
     // An interrupted run is not a failure — we asked for it.
+    //
+    // A turn that threw may still have been billed, and we cannot know what it
+    // cost: the usage arrives with the response there was none of. Recorded as
+    // zero, which is the only number available, and noted here so nobody reads
+    // a cheap failed run as evidence that failures are cheap.
     return kill.fired() ? done({ answer: '' }) : done({ answer: '', error: (e as Error).message });
   } finally {
     watch(null);

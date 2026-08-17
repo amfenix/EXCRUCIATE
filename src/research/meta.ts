@@ -5,7 +5,7 @@
  * `yes` and an unquoted timestamp all stay strings. That is worth knowing: under
  * YAML 1.1 the first two would have become booleans.
  */
-import { integer, oneOf, required, text, bool } from './parse.ts';
+import { integer, isBlank, oneOf, required, text, bool } from './parse.ts';
 import type { Problems } from './parse.ts';
 import type { Research } from './types.ts';
 
@@ -36,6 +36,9 @@ export function parseResearch(source: string, p: Problems, where = 'research.yam
     concurrency: integer(p, where, 'concurrency', doc['concurrency'], 1),
     preflight: bool(p, where, 'preflight', doc['preflight'], true),
     ...(text(doc['toolTimeout']) !== '' ? { toolTimeout: text(doc['toolTimeout']) } : {}),
+    // Absent means no ceiling. A budget of 0 is a real instruction — "run
+    // nothing" — so blankness is what turns it off, not the value zero.
+    ...budgetOf(p, where, doc['budget']),
   };
 
   for (const key of Object.keys(doc)) {
@@ -54,6 +57,7 @@ const KNOWN = new Set([
   'toolTimeout',
   'concurrency',
   'preflight',
+  'budget',
 ]);
 
 const fallback = (): Research => ({
@@ -66,3 +70,25 @@ const fallback = (): Research => ({
   concurrency: 1,
   preflight: true,
 });
+
+/**
+ * A USD amount. Accepts `5`, `5.00`, `$5` — a budget written with the currency
+ * sign is what a person types, and refusing it teaches nothing.
+ *
+ * Negative is refused rather than clamped: it means the author meant something
+ * we cannot guess at.
+ */
+function budgetOf(p: Problems, where: string, value: unknown): { budget?: number } {
+  if (isBlank(value)) return {};
+
+  const n = Number(text(value).replace(/^\$/, ''));
+  if (!Number.isFinite(n)) {
+    p.add(where, `budget must be an amount in USD, got "${text(value)}"`);
+    return {};
+  }
+  if (n < 0) {
+    p.add(where, `budget cannot be negative, got ${n}`);
+    return {};
+  }
+  return { budget: n };
+}

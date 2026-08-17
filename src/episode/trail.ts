@@ -20,6 +20,7 @@ import type { Json } from '../types.ts';
 import type { AuditRow, JournalRow } from '../types.ts';
 import type { Verification } from '../core/world.ts';
 import type { Firing } from '../fault/types.ts';
+import { formatTokens, formatUsd, sumSpend } from '../cost.ts';
 import type { Episode, EffectRecord, GradeResult, SayRecord, StepRecord } from './types.ts';
 
 export interface TrailInput {
@@ -52,7 +53,38 @@ export function formatTrail(t: TrailInput): string {
 
   out.push('', RULE, '  GRADE', RULE, '', ...gradeBlock(t.grade));
   out.push('', THIN, `  replay   ${t.replay.ok ? 'audit reproduced exactly' : `MISMATCH — ${t.replay.reason}`}`);
+  out.push(...spendBlock(t.steps));
   return `${out.join('\n')}\n`;
+}
+
+/**
+ * What this repetition cost, at the end where a reader looks for a total.
+ *
+ * Tokens and dollars together: the dollars were priced when the run happened
+ * and catalog rates move, so the tokens are what makes the figure checkable
+ * later.
+ */
+function spendBlock(steps: StepRecord[]): string[] {
+  const spent = steps.filter((s): s is SayRecord => s.kind === 'say' && s.spend !== undefined);
+  if (spent.length === 0) return ['  spend    nothing — no step reached the model'];
+
+  const total = sumSpend(spent.map((s) => s.spend!));
+  const out = [
+    `  spend    ${formatTokens(total.inputTokens)} in + ${formatTokens(total.outputTokens)} out` +
+      `${total.cachedTokens > 0 ? ` (${formatTokens(total.cachedTokens)} cached)` : ''}` +
+      `   ${formatUsd(total.usd)}`,
+  ];
+  // Per step too, when there was more than one: an episode that got expensive
+  // usually got expensive somewhere in particular.
+  if (spent.length > 1) {
+    for (const s of spent) {
+      out.push(
+        `             step ${s.index}: ${formatTokens(s.spend!.inputTokens)} in + ` +
+          `${formatTokens(s.spend!.outputTokens)} out   ${formatUsd(s.spend!.usd)}`
+      );
+    }
+  }
+  return out;
 }
 
 function header(spec: Episode): string[] {

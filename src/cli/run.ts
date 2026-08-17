@@ -9,6 +9,8 @@ import { relative, resolve } from 'node:path';
 import { loadResearch } from '../research/load.ts';
 import { runResearch } from '../run/research.ts';
 import { print } from './report.ts';
+import { formatUsd } from '../cost.ts';
+import type { Projection } from '../run/project.ts';
 import type { ResearchOptions, ResearchRun } from '../run/research.ts';
 
 export interface RunArgs {
@@ -59,6 +61,7 @@ export async function cmdRun(args: RunArgs): Promise<number> {
     // Preflight still runs — it is the only thing that catches a rejected
     // temperature, and it costs one call per distinct configuration.
     console.log(`dry: ${run.total} episodes would run. Configuration accepted by the provider.`);
+    projection(run.projection, loaded.meta.budget);
     return 0;
   }
 
@@ -68,17 +71,53 @@ export async function cmdRun(args: RunArgs): Promise<number> {
 
 const word = (v: boolean | null): string => (v === null ? '—' : v ? 'yes' : 'no');
 
+/**
+ * What it would cost, with the reasoning shown.
+ *
+ * Printed as an over-estimate on purpose, and said so: a projection that reads
+ * low gets believed and then resented. The assumptions are listed because a
+ * number without them cannot be argued with, only trusted or ignored.
+ */
+function projection(p: Projection | undefined, budget: number | undefined): void {
+  if (p === undefined) return;
+
+  console.log(`\nprojected cost   ${formatUsd(p.usd)}   for ${p.episodes} episode${p.episodes === 1 ? '' : 's'}`);
+  for (const row of p.rows) {
+    console.log(`  ${row.id.padEnd(34).slice(0, 34)} ${String(row.episodes).padStart(4)} × ${formatUsd(row.usd === null ? null : row.usd / row.episodes)}   ${formatUsd(row.usd)}`);
+  }
+
+  if (p.unpriced.length > 0) {
+    console.log(`\n  NOT IN THE TOTAL — the catalog prices no: ${p.unpriced.join(', ')}`);
+  }
+
+  console.log('\n  read this as an upper bound:');
+  for (const a of p.assumptions) console.log(`    · ${a}`);
+
+  if (budget !== undefined && p.usd !== null) {
+    console.log(
+      p.usd > budget
+        ? `\n  OVER BUDGET — projected ${formatUsd(p.usd)} against a ceiling of ${formatUsd(budget)}.` +
+            `\n  The run would stop partway. Raise the budget or cut the matrix.`
+        : `\n  within the ${formatUsd(budget)} budget`
+    );
+  }
+}
+
 /** Exactly what `report` prints, plus what this invocation itself did. */
 function summarise(run: ResearchRun, from: string): void {
   const episodes = run.rows.reduce((n, r) => n + r.total, 0);
   // Under resume most of the folder was run by someone else, earlier. Saying
   // "12 episodes" over a summary of 900 would be a lie about the sample size.
   const now = run.skipped > 0 ? ` (${run.ran} this run, ${run.skipped} already done)` : '';
-  console.log(`\nran ${run.ran} episode${run.ran === 1 ? '' : 's'}${now} in ${Math.round(run.ms / 1000)}s\n`);
+  const cost = run.spend === undefined ? '' : `, ${formatUsd(run.spend.usd)}`;
+  console.log(`\nran ${run.ran} episode${run.ran === 1 ? '' : 's'}${now} in ${Math.round(run.ms / 1000)}s${cost}\n`);
 
   if (run.stopped !== null) {
     // A run cut short must never be read as a run that finished clean.
     console.log(`STOPPED EARLY — ${run.stopped}\n`);
+  }
+  if (run.budget !== undefined && run.spend?.usd != null) {
+    console.log(`budget   ${formatUsd(run.spend.usd)} of ${formatUsd(run.budget)}\n`);
   }
 
   print(run.dir, run.rows, episodes);

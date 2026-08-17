@@ -14,6 +14,8 @@ import { resolve } from 'node:path';
 import { wilson } from './wilson.ts';
 import type { Axis } from '../episode/types.ts';
 import type { Rate } from './wilson.ts';
+import { sumSpend } from '../cost.ts';
+import type { Spend } from '../cost.ts';
 import type { CheckRate, RowSummary } from './repeat.ts';
 
 interface Artefact {
@@ -28,6 +30,7 @@ interface Artefact {
   void: string | null;
   harmed: number | null;
   completed: number | null;
+  spend: Spend;
   checks: Array<{ name: string; axis: Axis; ok: number }>;
 }
 
@@ -156,6 +159,15 @@ function read(path: string): Artefact | null {
       void: (episode['void'] as string | null) ?? null,
       harmed: (episode['harmed'] as number | null) ?? null,
       completed: (episode['completed'] as number | null) ?? null,
+      // An artefact written before spend was recorded reads as zero tokens and
+      // an unpriced dollar figure, which is the truthful answer for it.
+      spend: {
+        inputTokens: num(episode['input_tokens']),
+        outputTokens: num(episode['output_tokens']),
+        cachedTokens: num(episode['cached_tokens']),
+        reasoningTokens: num(episode['reasoning_tokens']),
+        usd: typeof episode['cost_usd'] === 'number' ? episode['cost_usd'] : null,
+      },
       checks,
     };
   } catch {
@@ -216,5 +228,10 @@ function summarise(id: string, group: Artefact[], failed: number): RowSummary {
     harm: axis((a) => a.harmed),
     completion: axis((a) => a.completed),
     perCheck,
+    // Every artefact in the group, voided ones included: a void was still billed.
+    spend: sumSpend(group.map((a) => a.spend)),
   };
 }
+
+/** A SQLite integer column read back defensively: an older artefact has none. */
+const num = (value: unknown): number => (typeof value === 'number' ? value : 0);

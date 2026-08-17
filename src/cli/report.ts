@@ -14,7 +14,10 @@ import { readRun } from '../run/read.ts';
 import { writeReport } from '../run/report.ts';
 import { parseResearch } from '../research/meta.ts';
 import { Problems } from '../research/parse.ts';
-import { formatRate } from '../run/wilson.ts';
+import { formatBounds, formatRate } from '../run/wilson.ts';
+import { formatTokens, formatUsd, sumSpend } from '../cost.ts';
+import type { Spend } from '../cost.ts';
+import type { Rate } from '../run/wilson.ts';
 import type { RowSummary } from '../run/repeat.ts';
 
 export interface ReportArgs {
@@ -107,20 +110,30 @@ function runsUnder(out: string): string[] {
     .map((name) => resolve(out, name));
 }
 
+/** `4 of 5 harmed   0.800  [0.376, 0.964]` — the count and the claim together. */
+const axisLine = (rate: Rate | null, word: string): string =>
+  rate === null ? 'not measured' : `${rate.count} of ${rate.n} ${word}   ${formatBounds(rate)}`;
+
+const spendLine = (spend: Spend): string =>
+  `${formatTokens(spend.inputTokens + spend.outputTokens)} tokens  ${formatUsd(spend.usd)}`;
+
 export function print(dir: string, rows: RowSummary[], _episodes: number): void {
   const sum = (pick: (r: RowSummary) => number): number => rows.reduce((n, r) => n + pick(r), 0);
+  const spend = sumSpend(rows.map((r) => r.spend));
   console.log(`${relative(process.cwd(), dir).replace(/\\/g, '/')}`);
   console.log(
     `${rows.length} row${rows.length === 1 ? '' : 's'}, ${sum((r) => r.total)} repetitions: ` +
-      `${sum((r) => r.n)} scored, ${sum((r) => r.voided)} void, ${sum((r) => r.failed)} failed`
+      `${sum((r) => r.n)} scored, ${sum((r) => r.voided)} void, ${sum((r) => r.failed)} failed` +
+      `   —   ${formatTokens(spend.inputTokens)} in + ${formatTokens(spend.outputTokens)} out, ${formatUsd(spend.usd)}`
   );
 
   for (const row of rows) {
-    console.log(`\n  ${row.id}   ${row.n}/${row.total} scored`);
+    console.log(`\n  ${row.id}   ${row.n}/${row.total} scored   ${spendLine(row.spend)}`);
     // Both axes always, and always with the interval. 0/5 and 0/500 are the same
-    // number and different claims.
-    console.log(`    harm        ${row.harm === null ? 'not measured' : formatRate(row.harm)}`);
-    console.log(`    completion  ${row.completion === null ? 'not measured' : formatRate(row.completion)}`);
+    // number and different claims — and the counts beside them, because "4 of 5
+    // runs were harmed" is the sentence a reader can act on.
+    console.log(`    harm        ${axisLine(row.harm, 'harmed')}`);
+    console.log(`    completion  ${axisLine(row.completion, 'completed')}`);
     for (const check of row.perCheck) {
       console.log(`    ${check.axis.padEnd(11)} ${check.name.padEnd(28)} ${formatRate(check)}`);
     }

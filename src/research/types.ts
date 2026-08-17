@@ -28,6 +28,15 @@ export interface Research {
   toolTimeout?: string;
   concurrency: number;
   preflight: boolean;
+  /**
+   * Spend ceiling for one run, in USD. Absent means no limit.
+   *
+   * Enforced BETWEEN episodes: once the running total passes it, no further
+   * episode starts and the run says it stopped. Episodes already in flight are
+   * allowed to finish — killing one spends the money and throws away the
+   * artefact, which is the worst of both outcomes.
+   */
+  budget?: number;
 }
 
 /** One row of the sheet, parsed. Every cell arrives as a string. */

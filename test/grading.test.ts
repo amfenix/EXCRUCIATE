@@ -14,6 +14,7 @@ import { writeTranscript } from '../src/episode/transcript.ts';
 import { runEpisode } from '../src/episode/run.ts';
 import { runRepeated, summarise } from '../src/run/repeat.ts';
 import { formatRate, wilson } from '../src/run/wilson.ts';
+import { NO_SPEND } from '../src/cost.ts';
 import type { Check, Episode, EpisodeResult, GradeResult, StepRecord } from '../src/episode/types.ts';
 
 const FIXTURE = resolve(import.meta.dir, '../research/demo/fixtures/demo');
@@ -260,6 +261,7 @@ describe('summarising a run', () => {
       surface: 'tools',
       model: 'm',
       memory: 'session',
+      spend: NO_SPEND,
       steps: [],
       journal: [],
       audit: [],

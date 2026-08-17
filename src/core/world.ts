@@ -49,7 +49,14 @@ CREATE TABLE _audit (
 -- read what the model said about it.
 CREATE TABLE _steps (
   step INTEGER PRIMARY KEY, kind TEXT NOT NULL, t_virtual TEXT NOT NULL,
-  say TEXT, answer TEXT, what TEXT, interrupted INTEGER, error TEXT, note TEXT
+  say TEXT, answer TEXT, what TEXT, interrupted INTEGER, error TEXT, note TEXT,
+  -- What the step consumed, cumulative over every turn the agent took inside it.
+  -- Null on an effect step, and on a say-step that never reached the model —
+  -- which is not the same as one that cost nothing.
+  -- cost_usd is priced AT RUN TIME and kept beside the tokens: catalog prices
+  -- change, and a dollar figure with no token count behind it cannot be rechecked.
+  input_tokens INTEGER, output_tokens INTEGER, cached_tokens INTEGER,
+  reasoning_tokens INTEGER, cost_usd REAL
 );
 CREATE TABLE _calls (
   seq INTEGER PRIMARY KEY AUTOINCREMENT, step INTEGER NOT NULL,
@@ -75,7 +82,10 @@ CREATE TABLE _episode (
   -- Provenance: which workbook row this is a repetition of, and what the author
   -- called it. Nothing in the run reads these; they are here so a folder of
   -- artefacts can be reported on years later with the research long gone.
-  row TEXT, task TEXT, notes TEXT
+  row TEXT, task TEXT, notes TEXT,
+  -- This repetition's total spend, summed over its say-steps.
+  input_tokens INTEGER, output_tokens INTEGER, cached_tokens INTEGER,
+  reasoning_tokens INTEGER, cost_usd REAL
 );
 CREATE TABLE _faults (
   seq INTEGER PRIMARY KEY AUTOINCREMENT, step INTEGER NOT NULL, op TEXT NOT NULL,

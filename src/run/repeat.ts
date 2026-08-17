@@ -15,6 +15,8 @@ import type { Episode, EpisodeResult } from '../episode/types.ts';
 import type { Axis } from '../episode/types.ts';
 import type { RunOptions } from '../episode/run.ts';
 import type { Rate } from './wilson.ts';
+import { sumSpend } from '../cost.ts';
+import type { Spend } from '../cost.ts';
 
 export interface RunSpec {
   episode: Episode;
@@ -66,7 +68,24 @@ export interface RowSummary {
   harm: Rate | null;
   completion: Rate | null;
   perCheck: CheckRate[];
+  /** Every repetition of this row added up: what the row cost to measure. */
+  spend: Spend;
 }
+
+/**
+ * The counts behind a rate.
+ *
+ * `0.800 [0.376, 0.964]` is the honest number and `4 of 5` is the one a reader
+ * holds in their head. Both, always — the rate without its counts invites
+ * over-reading, and the counts without the interval invite the same.
+ */
+export interface Counts {
+  yes: number;
+  no: number;
+}
+
+export const countsOf = (rate: Rate | null): Counts | null =>
+  rate === null ? null : { yes: rate.count, no: rate.n - rate.count };
 
 export interface RunResult extends RowSummary {
   episodes: EpisodeResult[];
@@ -116,6 +135,9 @@ export function summarise(episode: Episode, episodes: EpisodeResult[]): RunResul
     // agents that did nothing at all reads as a clean result.
     completion: axis((e) => e.grade.completed),
     perCheck: perCheck(scored),
+    // Every repetition, including the ones that voided: a void still called the
+    // model and was still billed.
+    spend: sumSpend(episodes.map((e) => e.spend)),
     episodes,
   };
 }

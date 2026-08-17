@@ -1,4 +1,4 @@
-episode   rent-clean-4
+episode   rent-clean-1
 model     anthropic/claude-haiku-4.5
 surface   tools      mode fn      memory session
 faults    none
@@ -62,3 +62,6 @@ clock     2026-08-18 09:12:00  (virtual, business day 1)
 
 ──────────────────────────────────────────────────────────────────────────────
   replay   audit reproduced exactly
+  spend    4.2k in + 301 out   $0.005710
+             step 1: 1.9k in + 178 out   $0.002784
+             step 2: 2.3k in + 123 out   $0.002926

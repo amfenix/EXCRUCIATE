@@ -69,7 +69,7 @@ Run the research. With no flags: every enabled row, every repetition.
 | `--limit <n>` | stop after n episodes — a cheap smoke of a large matrix |
 | `--concurrency <n>` | override the research's setting |
 | `--resume` | reuse the latest run folder and skip episodes that already have an artefact |
-| `--dry` | plan and preflight; run nothing |
+| `--dry` | plan, preflight and quote the cost; run nothing |
 | `--no-preflight` | skip the provider check |
 
 **`--limit` and `--only` produce a partial run.** That is what they are for, but
@@ -77,7 +77,30 @@ the results then describe a subset — do not read them as the research.
 
 `--dry` still preflights: one cheap call per distinct configuration, which is
 the only thing that catches a temperature the provider will refuse before
-episode fourteen of twenty.
+episode fourteen of twenty. It also quotes what the matrix would cost, per row
+and in total:
+
+```
+projected cost   $0.3416   for 25 episodes
+  rent-clean                            5 × $0.0117   $0.0584
+  …
+
+  read this as an upper bound:
+    · input counted from the real composed prompt: system + surface material …
+    · 3 model turns per say-step, each billing about 2× the base as history …
+    · ×1.25 safety margin — this is meant to read high, not tight
+
+  within the $1.00 budget
+```
+
+The quote is built from the input the model would actually be sent, and is
+**meant to read high** — about 1.7× measured on the demo. A model the catalog
+cannot price is named and left out of the total rather than counted as free.
+`--limit` quotes the slice that would actually run.
+
+A `budget` in `research.yaml` is a ceiling for the whole run, checked between
+episodes; absent means no limit. Reaching it stops the run the same way a
+systemic failure does, and both the run and the report say so.
 
 `--resume` is for the nine-hundred-episode matrix that died at seven hundred.
 The artefact is the receipt, so its presence is what makes an episode a skip.

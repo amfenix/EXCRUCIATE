@@ -10,6 +10,7 @@
  *   a step WITHOUT one moves the world and nobody looks.
  */
 import type { Clock, Json, Statement } from '../types.ts';
+import type { Spend } from '../cost.ts';
 import type { ThinkingConfig } from '@combycode/llm-sdk';
 import type { Fault, Firing } from '../fault/types.ts';
 import type { Mode } from '../runner.ts';
@@ -170,6 +171,12 @@ export interface SayRecord extends RecordCommon {
   kind: 'say';
   say: string;
   answer: string;
+  /**
+   * What this step consumed, cumulative over every turn the agent took inside
+   * it. Absent when the step never reached the model — an unreached step cost
+   * nothing, and recording a zero would be indistinguishable from a free one.
+   */
+  spend?: Spend;
   /** Only the calls this step made. */
   calls: SurfaceCall[];
   /** Faults that fired during this step. Injected failures must never be
@@ -226,6 +233,8 @@ export interface EpisodeResult {
   surface: SurfaceKind;
   model: string;
   memory: 'session' | 'fresh';
+  /** Every say-step's usage added up: what this one repetition cost. */
+  spend: Spend;
   steps: StepRecord[];
   grade: GradeResult;
   journal: unknown[];

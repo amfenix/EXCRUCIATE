@@ -18,6 +18,10 @@ import { assertPreflight, distinctPlans, preflight, splitModel } from '../prefli
 import { pool, stopOnRepeatedFailure } from './pool.ts';
 import { readRun, recordFailures } from './read.ts';
 import { writeReport } from './report.ts';
+import { NO_SPEND, addSpend, formatUsd } from '../cost.ts';
+import { project } from './project.ts';
+import type { Projection } from './project.ts';
+import type { Spend } from '../cost.ts';
 import type { ProviderName } from '@combycode/llm-sdk';
 import type { EpisodeResult } from '../episode/types.ts';
 import type { LoadedEpisode, LoadedResearch } from '../research/load.ts';
@@ -64,9 +68,15 @@ export interface ResearchRun {
   failed: Array<{ id: string; error: string }>;
   /** Episodes that already had an artefact, under `resume`. */
   skipped: number;
-  /** Set when a systemic failure cut the run short. */
+  /** Set when a systemic failure cut the run short, or the budget was reached. */
   stopped: string | null;
   ms: number;
+  /** What the run actually consumed. Zero on a dry run — nothing was called. */
+  spend?: Spend;
+  /** Only on a dry run: what it would have cost. */
+  projection?: Projection;
+  /** The research's ceiling, when it set one. */
+  budget?: number;
 }
 
 export async function runResearch(loaded: LoadedResearch, opts: ResearchOptions = {}): Promise<ResearchRun> {
@@ -82,11 +92,22 @@ export async function runResearch(loaded: LoadedResearch, opts: ResearchOptions 
 
   const jobs = plan(chosen, opts.limit);
   if (opts.dry === true) {
-    return { dir: '', rows: [], total: jobs.length, ran: 0, skipped: 0, failed: [], stopped: null, ms: Date.now() - began };
+    return {
+      dir: '',
+      rows: [],
+      total: jobs.length,
+      ran: 0,
+      skipped: 0,
+      failed: [],
+      stopped: null,
+      ms: Date.now() - began,
+      projection: await project(chosen, opts.limit),
+    };
   }
 
   const dir = makeRunFolder(loaded, opts.resume === true);
-  const book = bookkeeping(jobs, opts);
+  // A budget on the research is a ceiling for the whole run; absent = no limit.
+  const book = bookkeeping(jobs, opts, loaded.meta.budget);
 
   const { outcomes, stopped } = await pool(jobs, async (job) => await runOne(job, dir, opts.resume === true), {
     limit: opts.concurrency ?? loaded.meta.concurrency,
@@ -114,6 +135,8 @@ export async function runResearch(loaded: LoadedResearch, opts: ResearchOptions 
     failed,
     stopped,
     ms: Date.now() - began,
+    spend: book.spent(),
+    ...(loaded.meta.budget !== undefined ? { budget: loaded.meta.budget } : {}),
   };
 }
 
@@ -126,30 +149,45 @@ export async function runResearch(loaded: LoadedResearch, opts: ResearchOptions 
  */
 function bookkeeping(
   jobs: Job[],
-  opts: ResearchOptions
+  opts: ResearchOptions,
+  budget?: number
 ): {
   failed: Array<{ id: string; error: string }>;
+  spent: () => Spend;
   onDone: (o: Outcome<EpisodeResult>) => void;
   shouldStop: (outcomes: Array<Outcome<EpisodeResult>>) => string | null;
 } {
   const failed: Array<{ id: string; error: string }> = [];
+  let spent = NO_SPEND;
   let done = 0;
 
   return {
     failed,
+    spent: () => spent,
     onDone: (o) => {
       done += 1;
       const job = jobs[o.index]!;
       if (o.error && !(o.error instanceof SkippedError)) {
         failed.push({ id: job.id, error: o.error.message });
       }
+      if (o.value !== undefined) spent = addSpend(spent, o.value.spend);
       opts.onProgress?.(done, jobs.length, job, {
         ...(o.error !== undefined ? { error: o.error } : {}),
         ...(o.value !== undefined ? { result: o.value } : {}),
       });
     },
-    shouldStop: (outcomes) =>
-      stopOnRepeatedFailure(3)(outcomes.filter((o) => !(o.error instanceof SkippedError))),
+    shouldStop: (outcomes) => {
+      /**
+       * The budget is checked BETWEEN episodes, so it can overshoot by whatever
+       * was already in flight. That is deliberate: stopping an episode mid-way
+       * spends the money and throws away the artefact. With concurrency 4 the
+       * overshoot is at most three more episodes.
+       */
+      if (budget !== undefined && spent.usd !== null && spent.usd >= budget) {
+        return `budget reached: ${formatUsd(spent.usd)} of ${formatUsd(budget)} spent`;
+      }
+      return stopOnRepeatedFailure(3)(outcomes.filter((o) => !(o.error instanceof SkippedError)));
+    },
   };
 }
 

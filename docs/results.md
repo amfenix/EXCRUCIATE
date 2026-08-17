@@ -3,7 +3,7 @@
 A run writes one folder:
 
 ```
-results/2026-08-17T08-46-58-795Z/
+results/2026-08-17T14-12-48-482Z/
   results.xlsx        one line per workbook row, plus TOTAL
   episodes/           one .sqlite per repetition: rent-clean-1 … rent-clean-5
   logs/               one readable trail per repetition, plus *.handler.log
@@ -26,8 +26,17 @@ N repetitions — ending in a `TOTAL` line.
 | `scored` | ran and judged — **the denominator of every rate** |
 | `voided` | ran, but could not be judged — our fault |
 | `failed` | never ran to completion — harness or provider |
+| `harmed`, `unharmed` | how many scored runs went each way |
 | `harm`, `harm_lo`, `harm_hi` | the harm rate and its interval |
+| `completed`, `incomplete` | the same two counts for the other axis |
 | `completion`, … | the completion rate and its interval |
+| `input_tokens`, `output_tokens` | summed over every repetition of the row |
+| `cost_usd` | what the row cost, priced when it ran |
+
+**The counts come before the rate on purpose.** "4 of 5 harmed" is a sentence a
+reader can check by counting; `0.800` is a claim that rests on it. An axis nobody
+measured leaves the counts **blank** rather than `0` — a zero there would read as
+"no run was harmed".
 
 **The three outcomes are kept apart on purpose.** Pooling them is how a run that
 mostly broke reads as a run that mostly passed. A row whose every repetition
@@ -67,6 +76,35 @@ different conditions, which is why it is labelled TOTAL and is not a finding.
 difference between the `faults: none` row and the fault row, and the intervals
 tell you whether that difference survives.
 
+### What it cost
+
+Every model call is priced when it happens and the tokens are kept beside the
+dollars — catalog prices change, and a stored dollar figure with no token count
+behind it cannot be re-checked later. The figures roll up the way the rates do:
+per say-step in `_steps`, per episode in `_episode`, per row in the spreadsheet,
+pooled in `TOTAL`.
+
+**`not priced` is not `$0`.** A model the catalog lists no price for reports its
+tokens and no dollars, and one unpriced row makes the TOTAL unpriced too — a
+total that quietly omits the expensive row would read as the whole run's cost.
+
+Before spending anything:
+
+```sh
+excruciate run research/demo --dry
+```
+
+`--dry` quotes the whole matrix from the real composed input — system prompt,
+surface material, every tool schema, every say — and **deliberately reads high**
+(about 1.7× measured on the demo), because a projection that under-reads is the
+one that gets believed. It lists its assumptions so the number can be argued
+with, and compares itself to the `budget` in `research.yaml`.
+
+A `budget` is a ceiling for the whole run. It is checked **between** episodes, so
+it can overshoot by whatever was already in flight; stopping an episode mid-way
+would spend the money and throw away the artefact. When it is reached the run
+stops and the report says `STOPPED EARLY`. Absent means no limit.
+
 ## 2. The trail
 
 `logs/<episode>.log` is the same record as the `.sqlite`, laid out to be read.
@@ -96,7 +134,18 @@ This is the file to open when a run does something surprising:
 Only the fields that moved, with the `actor` that moved them, in the order it
 happened — the world changes before the model answers, because that is when they
 happened. Effect steps show their SQL and row counts; the file ends with the
-grade check by check with evidence, or the void reason, then the replay verdict.
+grade check by check with evidence, or the void reason, then the replay verdict,
+then what the repetition cost:
+
+```
+  replay   audit reproduced exactly
+  spend    4.3k in + 361 out   $0.006107
+             step 1: 3.0k in + 308 out   $0.004577
+             step 2: 1.3k in + 53 out   $0.001530
+```
+
+Per step as well as in total, when there was more than one — an episode that got
+expensive usually got expensive somewhere in particular.
 
 `logs/<episode>.handler.log` is separate: whatever the handler process printed.
 
@@ -112,11 +161,14 @@ One per repetition, and it is the whole story. Open it in any SQLite tool.
 | `_clock` | virtual time at the end |
 | `_journal` | what was **asked**, verbatim — including zero-row and failed statements |
 | `_audit` | what **changed**, row by row, with `before`/`after` |
-| `_steps` | one row per step: what was said, what was answered |
+| `_steps` | one row per step: what was said, what was answered, what it cost |
 | `_calls` | every tool call: `tool`, `op`, `args`, `result`, `status`, `ok` |
 | `_faults` | what was injected, and whether it committed |
 | `_grade` | every check, its verdict and evidence |
-| `_episode` | the configuration and the two axes |
+| `_episode` | the configuration, the two axes, and the episode's usage |
+
+`_steps` and `_episode` both carry `input_tokens`, `output_tokens`,
+`cached_tokens`, `reasoning_tokens` and `cost_usd`.
 
 ### Three columns that decide whether a query is right
 

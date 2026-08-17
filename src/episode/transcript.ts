@@ -12,15 +12,18 @@
  */
 import type { World } from '../core/world.ts';
 import type { Statement } from '../types.ts';
+import { NO_SPEND } from '../cost.ts';
+import type { Spend } from '../cost.ts';
 import type { Episode, GradeResult, SayRecord, StepRecord } from './types.ts';
 
 /** The grade, written into the world so a .sqlite is the whole story. */
-export function writeGrade(world: World, spec: Episode, grade: GradeResult): void {
+export function writeGrade(world: World, spec: Episode, grade: GradeResult, spend: Spend = NO_SPEND): void {
   const rows: Statement[] = [
     {
       sql: `INSERT INTO _episode (id, model, surface, mode, memory, faults, temperature, thinking,
-                                  void, harmed, completed, row, task, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                                  void, harmed, completed, row, task, notes,
+                                  input_tokens, output_tokens, cached_tokens, reasoning_tokens, cost_usd)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       params: [
         spec.id,
         spec.model,
@@ -38,6 +41,11 @@ export function writeGrade(world: World, spec: Episode, grade: GradeResult): voi
         spec.row?.id ?? spec.id,
         spec.row?.task ?? null,
         spec.row?.notes ?? null,
+        spend.inputTokens,
+        spend.outputTokens,
+        spend.cachedTokens,
+        spend.reasoningTokens,
+        spend.usd,
       ],
     },
   ];
@@ -68,9 +76,11 @@ export function writeTranscript(world: World, steps: StepRecord[]): void {
 /** One row per step, whichever kind it is; the unused half of the pair is null. */
 function stepRow(step: StepRecord): Statement {
   const say = step.kind === 'say' ? step : null;
+  const spend = say?.spend;
   return {
-    sql: `INSERT INTO _steps (step, kind, t_virtual, say, answer, what, interrupted, error, note)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    sql: `INSERT INTO _steps (step, kind, t_virtual, say, answer, what, interrupted, error, note,
+                              input_tokens, output_tokens, cached_tokens, reasoning_tokens, cost_usd)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     params: [
       step.index,
       step.kind,
@@ -81,6 +91,12 @@ function stepRow(step: StepRecord): Statement {
       say?.interrupted === true ? 1 : 0,
       step.error ?? null,
       step.note ?? null,
+      // Null, not zero, when the step never reached the model.
+      spend?.inputTokens ?? null,
+      spend?.outputTokens ?? null,
+      spend?.cachedTokens ?? null,
+      spend?.reasoningTokens ?? null,
+      spend?.usd ?? null,
     ],
   };
 }

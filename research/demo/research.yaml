@@ -8,3 +8,4 @@ out: results            # a timestamped folder is made inside this
 toolTimeout: 30s
 concurrency: 4
 preflight: yes
+budget: $1.00           # ceiling for one run; remove for no limit
