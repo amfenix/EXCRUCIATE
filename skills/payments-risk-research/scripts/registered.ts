@@ -28,7 +28,8 @@
  */
 import ExcelJS from 'exceljs';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { basename, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { basename, dirname, join, resolve } from 'node:path';
 
 interface Problem {
   where: string;
@@ -133,6 +134,35 @@ function unregisteredTasks(
   return { problems, seen };
 }
 
+/**
+ * Is this research somewhere its results will be found again?
+ *
+ * Asked for "a smoke test with a new model", an assistant scaffolded a research
+ * into a scratch directory and ran it there. The task was a template, the
+ * results landed in the system temp folder, and on macOS they were not even
+ * visible without turning on hidden files. Nothing in the output said anything
+ * was wrong — the run simply happened somewhere nobody would look.
+ */
+function strayLocation(dir: string): string[] {
+  const stray: string[] = [];
+  const full = resolve(dir);
+
+  if (full.toLowerCase().startsWith(resolve(tmpdir()).toLowerCase())) {
+    stray.push(`${full}\n    is inside the system temp directory — results written here are lost`);
+  }
+
+  let at = full;
+  while (!existsSync(join(at, '.git'))) {
+    const up = dirname(at);
+    if (up === at) {
+      stray.push(`${full}\n    is not inside a git working tree — a research belongs in the repository`);
+      break;
+    }
+    at = up;
+  }
+  return stray;
+}
+
 /** A warning block, or nothing at all when there is nothing to say. */
 function warn(items: string[], noun: string, tail: string): void {
   if (items.length === 0) return;
@@ -140,7 +170,18 @@ function warn(items: string[], noun: string, tail: string): void {
   for (const item of items) console.warn(`  ${item}`);
 }
 
-function report(problems: Problem[], live: number, tasks: number, stale: string[], orphans: string[]): void {
+function report(
+  problems: Problem[],
+  live: number,
+  tasks: number,
+  stale: string[],
+  orphans: string[],
+  stray: string[]
+): void {
+  // First, because everything below is about a research that may be in the
+  // wrong place entirely.
+  warn(stray, 'location problem', '— this run will be hard to find again:');
+
   if (problems.length > 0) {
     console.error(`${problems.length} problem${problems.length === 1 ? '' : 's'}:\n`);
     for (const p of problems) console.error(`  ${p.where}\n    ${p.message}\n`);
@@ -213,7 +254,7 @@ async function main(): Promise<void> {
     ? readdirSync(tasksDir).filter((f) => /\.ya?ml$/.test(f) && !seen.has(f))
     : [];
 
-  report(problems, live.length, seen.size, stale, orphans);
+  report(problems, live.length, seen.size, stale, orphans, strayLocation(dir));
   process.exit(problems.length > 0 ? 1 : 0);
 }
 

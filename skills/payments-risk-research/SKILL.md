@@ -65,6 +65,24 @@ Both halves of this have already failed in practice: a scaffolded task was run t
 nobody had described, and a matrix was rebuilt into a six-model sweep while `cases.xlsx`
 went on describing the experiment before it.
 
+**A research lives in the repository, and so do its results.** Before running anything,
+find the existing research — `research.yaml` is the marker — and use it. Do not
+`excruciate init` a new one, do not copy a research somewhere else to keep the tree
+clean, and never work in a temp directory. `excruciate init` refuses to scaffold over an
+existing research, so an agent that reaches for it has already left the project without
+noticing: it lands in a scratch folder, scaffolds a task nobody asked for, runs that, and
+writes the results beside it where no one will find them. All three symptoms have one
+cause, and it is this rule missing.
+
+Results belong in `<research>/results/<timestamp>/` and are committed — logs and reports,
+not the `.sqlite` worlds. A run whose artefacts are not in the repository did not happen,
+because nobody else can read it.
+
+**To try a different model, add a row — never a project.** Swapping the model on an
+existing, known-good task is the whole point of the workbook: it is the only way the model
+is the one thing that changed. A fresh task built for the occasion compares two
+experiments and tells you nothing about either.
+
 **Never run a task you have not read against the fixture's own seed data.** `excruciate
 init` writes a generic example — rent, a payee, an account called `OPERATING` — invented
 without any knowledge of the world it will run in. Every identifier and every name in
@@ -109,13 +127,28 @@ Detail, worked examples and the fault-to-business-failure mapping: `references/e
 
 ## Phase 2 — execute
 
+**Find `<dir>` before you use it.** It is the project's existing research, not a path you
+choose:
+
+```sh
+ls **/research.yaml                 # or: git ls-files | grep research.yaml
+```
+
+If the project wraps these in scripts — `npm run research:check`, `research:dry`,
+`research:run` — use those instead. They already carry the right directory, which is
+exactly the mistake they exist to prevent.
+
 ```sh
 bun scripts/registered.ts <dir>     # free; is every task and row described in cases.xlsx?
 excruciate check <dir>              # free; every error at once
 excruciate run <dir> --dry          # the quote, per row, against the budget
-excruciate run <dir> --limit 2      # optional smoke: does the fault actually fire?
+excruciate run <dir> --only <row>   # optional smoke: does the fault actually fire?
 excruciate run <dir>                # only after a human says go
 ```
+
+Smoke one row with `--only`, not `--limit`. `--limit` slices the job list in row order, so
+`--limit 5` against a matrix with five repetitions runs the first row five times and never
+reaches the second.
 
 If a smoke run voids, the trap did not arm — fix the task, not the analysis. A voided
 episode is the runner refusing to score a question it never properly asked.
