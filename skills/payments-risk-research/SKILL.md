@@ -57,6 +57,22 @@ payment as a payment made. This is not hypothetical: it is the exact mistake in 
 demo research, and it scored a run clean in which £25 left the account and nothing
 settled.
 
+**Every task that runs is described in `cases.xlsx`, and every row that runs is in its
+`conditions` sheet.** A run whose business meaning is written down nowhere teaches the
+reader of the spreadsheet something false about what was tested. `scripts/registered.ts`
+refuses a research that has drifted, and it is not optional — run it before `check`.
+Both halves of this have already failed in practice: a scaffolded task was run that
+nobody had described, and a matrix was rebuilt into a six-model sweep while `cases.xlsx`
+went on describing the experiment before it.
+
+**Never run a task you have not read against the fixture's own seed data.** `excruciate
+init` writes a generic example — rent, a payee, an account called `OPERATING` — invented
+without any knowledge of the world it will run in. Every identifier and every name in
+task prose must be checked against `seed.sql`, because the model will use them verbatim:
+a task that says `OPERATING` where the seed says `operating` produces an agent that
+looks up nothing, finds nothing, and stops to ask — a wasted episode that reads like
+caution. For a smoke test, prefer a task that already runs clean over a fresh scaffold.
+
 ---
 
 ## Phase 1 — encode
@@ -64,9 +80,10 @@ settled.
 Inputs: the API surface (manifest, OpenAPI, or a sandbox to port), the business story,
 and the suspicions worth testing. Output: a research folder the runner accepts.
 
-1. **Read the surface.** List the operations and what each one changes. If there is no
-   handler yet, `docs/handlers.md` in the runner's repository covers porting a sandbox
-   to one.
+1. **Read the surface _and the seed_.** List the operations and what each one changes,
+   then read `seed.sql` and write down the exact ids, names and external references the
+   world actually contains. Task prose may only use those. If there is no handler yet,
+   `docs/handlers.md` in the runner's repository covers porting a sandbox to one.
 2. **Build the hypothesis table.** One entry per claim: the risk in one sentence, the
    payment method, the condition, its control, the SQL that confirms it, the SQL that
    measures its cost in money, and what would refute it. Show this to the human before
@@ -80,6 +97,12 @@ and the suspicions worth testing. Output: a research folder the runner accepts.
    looks rigorous.
 5. **Write the workbook.** One row per condition plus its control; the hypothesis id in
    `notes`; row ids as `<method>-<scenario>-<condition>`.
+6. **Register it in `cases.xlsx`.** The `cases` sheet gets the case in business terms —
+   the task as the operator would phrase it, where it sits in the flow, what counts as
+   harm. The `conditions` sheet gets one line per row id: what is different, why it is
+   in the matrix, which hypothesis it serves. This is where a reader who will never open
+   a YAML file learns what was tested, and it is the half most easily left behind when a
+   matrix is rebuilt.
 
 Detail, worked examples and the fault-to-business-failure mapping: `references/encode.md`,
 `references/grading.md`, `references/faults.md`.
@@ -87,6 +110,7 @@ Detail, worked examples and the fault-to-business-failure mapping: `references/e
 ## Phase 2 — execute
 
 ```sh
+bun scripts/registered.ts <dir>     # free; is every task and row described in cases.xlsx?
 excruciate check <dir>              # free; every error at once
 excruciate run <dir> --dry          # the quote, per row, against the budget
 excruciate run <dir> --limit 2      # optional smoke: does the fault actually fire?
@@ -95,6 +119,10 @@ excruciate run <dir>                # only after a human says go
 
 If a smoke run voids, the trap did not arm — fix the task, not the analysis. A voided
 episode is the runner refusing to score a question it never properly asked.
+
+`registered.ts` also warns about task files no live row uses. Read that list rather than
+skimming it: a scaffold left behind by `excruciate init` shows up there, and a scaffold
+that gets run by mistake is an experiment measuring the template.
 
 ## Phase 3 — decode
 

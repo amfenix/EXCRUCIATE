@@ -27,6 +27,25 @@ Ask, and write down the answers:
 - What states does a payment pass through, and which are terminal?
 - What does the API do when it fails — status, body, retry semantics?
 
+### Then read the seed, and copy the names out of it
+
+Open `seed.sql` and write down what the world literally contains: account ids,
+customer ids, payee names, external references — **in the exact case they are
+stored in**. Task prose may only use these. Nothing may be invented, and nothing
+may be paraphrased.
+
+This is not fussiness. The model uses what the prompt says, verbatim, as a lookup
+key. A task that said "the OPERATING account" against a seed holding
+`external_reference = 'operating'` produced exactly what you would hope for and
+cannot learn anything from: the agent called `accounts.list`, matched nothing,
+and stopped to ask which account was meant. The episode cost money, the fault
+never fired, and the transcript reads like a model being careful rather than a
+harness being wrong.
+
+Prefer an id to a name wherever the prose allows it. `A00000001` is unambiguous;
+"the operating account" depends on a lookup succeeding, and a lookup is a second
+thing that can fail for reasons that have nothing to do with the experiment.
+
 ---
 
 ## 2. Build the hypothesis table, and show it to a human
@@ -93,6 +112,21 @@ that trade is the human's to make, so put both numbers in front of them.
 One task file per scenario. Everything that varies across conditions belongs in
 the workbook, not here — the point of the split is that one task serves every
 comparison you want to draw from it.
+
+**A scaffold is not a task.** `excruciate init` writes a worked example — rent,
+a landlord, an account named in the abstract — as a shape to follow, and it knows
+nothing about the fixture it will run against. Treat what it writes as prose to
+be replaced, not filled in. Two rules follow from that, and both have been broken
+already:
+
+- Never point a run at a scaffolded task because it is the newest file in
+  `tasks/`. Asked for "a smoke test with a different model", the useful answer is
+  an existing task that is known to arm, run with the model swapped in the
+  workbook — that way the model is the only thing that changed. Pointing the
+  model at a fresh scaffold instead compares two different experiments and tells
+  you nothing about either.
+- Never leave a scaffold in `tasks/` unrenamed. `scripts/registered.ts` lists task
+  files no live row uses, which is where an abandoned `pay-rent.yaml` surfaces.
 
 ```yaml
 name: pay the rent, with an acknowledgement that may go missing
@@ -164,6 +198,28 @@ produces and rename them if they do not read as conditions.
 
 ---
 
+### And register it in `cases.xlsx`, in the same sitting
+
+`cases.xlsx` is the only artefact a reader who never opens a YAML file will
+understand, which makes it the one most worth keeping true and the one most
+easily forgotten. Two sheets:
+
+| sheet | one row per | what it must say |
+|---|---|---|
+| `cases` | scenario | the task as the operator phrases it, where it sits in the flow, the root cause it exercises, what counts as harm |
+| `conditions` | workbook row id | what is different about this row, why it is in the matrix, which hypothesis it serves |
+
+Write it **now**, while the reason each row exists is still in your head, and
+rewrite it whenever the matrix changes. The failure mode is not forgetting the
+file — it is updating `episodes.xlsx` and `hypotheses.yaml` for a new experiment
+and leaving `cases.xlsx` describing the old one. The spreadsheet then reads as
+authoritative and is wrong, which is worse than being absent. Quoting a task
+prompt here that the task no longer contains is the same error in miniature.
+
+`scripts/registered.ts` is what stops this reaching a report.
+
+---
+
 ## 6. Write `hypotheses.yaml`
 
 `assets/hypotheses.template.yaml` is the annotated skeleton;
@@ -190,9 +246,15 @@ effects from the fixture's own.
 ## 7. Check, quote, and stop
 
 ```sh
-excruciate check <dir>       # every error at once; costs nothing
-excruciate run <dir> --dry   # the quote, per row, against the budget
+bun scripts/registered.ts <dir>   # is every task and row described in cases.xlsx?
+excruciate check <dir>            # every error at once; costs nothing
+excruciate run <dir> --dry        # the quote, per row, against the budget
 ```
+
+`registered.ts` catches the drift between what runs and what is written down: a
+task nobody described, a row nobody explained, conditions still describing the
+previous experiment, a scaffold left in `tasks/`. It reads no results and makes
+no judgements — it only refuses a research that cannot say what it is testing.
 
 `check` catches bad values, unknown columns, duplicate ids, missing tasks, fault
 names no task declares, and grading SQL that will not run. Fix everything it says
