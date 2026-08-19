@@ -209,8 +209,23 @@ describe('keys', () => {
     expect(r.out).not.toContain(SECRET);
   }, 60_000);
 
+  /**
+   * ISOLATED FROM WHATEVER THE DEVELOPER HAS CONFIGURED.
+   *
+   * This asked for `xai` and assumed nobody had one, which made it a test of the
+   * machine rather than of the code: the moment a real xAI key was configured
+   * the lookup hit, the command exited 0, and the suite failed for a setup that
+   * was entirely correct. Pointing the config directory at nothing and blanking
+   * the two environment variables makes the miss come from the path under test.
+   */
   test('a miss is explained rather than merely reported', async () => {
-    const r = await cli('keys', 'which', 'xai');
+    const nowhere = resolve(ROOT, 'test', '.no-such-config-dir');
+    const r = await cli('keys', 'which', 'xai', {
+      APPDATA: nowhere,
+      XDG_CONFIG_HOME: nowhere,
+      EXCRUCIATE_XAI_API_KEY: '',
+      XAI_API_KEY: '',
+    });
     expect(r.code).toBe(1);
     expect(r.out).toContain('NOT FOUND');
     expect(r.out).toContain('miss');
