@@ -23,6 +23,7 @@ export const COLUMNS = [
   'resetTools',
   'parallelToolCalls',
   'faults',
+  'tools',
   'repeat',
   'fixture',
   'notes',

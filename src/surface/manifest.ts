@@ -18,6 +18,36 @@ export async function manifestFor(fixture: string): Promise<Manifest> {
 }
 
 /**
+ * Keep only the operations a row asked for.
+ *
+ * Names match exactly or by prefix, so `payments` keeps every `payments.*` and
+ * `payments.create` keeps one. A name that matches nothing is an error rather
+ * than an empty surface: a typo would otherwise hand the model a smaller API
+ * than the author believed, and the result would read as a model difference.
+ *
+ * The WORLD is untouched. An operation the model cannot see still exists, and a
+ * task step can still call it — which is what makes this a surface variable and
+ * not a change to the fixture.
+ */
+export function narrow(manifest: Manifest, tools: 'all' | string[] | undefined, where: string): Manifest {
+  if (tools === undefined || tools === 'all') return manifest;
+
+  const kept = manifest.ops.filter((op) => tools.some((t) => op.op === t || op.op.startsWith(`${t}.`)));
+  const matched = new Set(tools.filter((t) => manifest.ops.some((op) => op.op === t || op.op.startsWith(`${t}.`))));
+  const unknown = tools.filter((t) => !matched.has(t));
+
+  if (unknown.length > 0) {
+    throw new FixtureError(
+      `${where}: tools names ${unknown.join(', ')}, which no operation in the manifest matches`
+    );
+  }
+  if (kept.length === 0) {
+    throw new FixtureError(`${where}: tools selected no operations at all`);
+  }
+  return { ...manifest, ops: kept };
+}
+
+/**
  * A malformed manifest would otherwise surface as a model quietly receiving a
  * broken tool — the kind of failure that looks like a model result.
  */

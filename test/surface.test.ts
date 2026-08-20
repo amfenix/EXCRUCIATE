@@ -12,7 +12,7 @@ import { describe, expect, test } from 'bun:test';
 import { resolve } from 'node:path';
 import { close, init } from '../src/runner.ts';
 import { dispatchFor } from '../src/agent.ts';
-import { matchRoute, openApiDoc, openSurface, toolName, validateManifest } from '../src/surface/index.ts';
+import { matchRoute, narrowManifest, openApiDoc, openSurface, toolName, validateManifest } from '../src/surface/index.ts';
 import { manifest } from '../research/demo/fixtures/demo/manifest.ts';
 import { isFunctionTool } from '@combycode/llm-sdk';
 import type { AgentTool } from '@combycode/llm-sdk';
@@ -525,4 +525,57 @@ describe('a call records what it INVOKED, not only what was called', () => {
     expect(surface.calls[0]).toMatchObject({ tool: 'http_request', op: null });
     await close(s);
   }, 30_000);
+});
+
+/**
+ * `tools` on a row decides how much of the API the model can see.
+ *
+ * Surface size is a variable under study — an agent choosing between six payment
+ * methods is a different experiment from one handed a single `create` — and the
+ * only way to vary it used to be editing the fixture's manifest, which changes
+ * it for every row at once.
+ */
+describe('narrowing the surface', () => {
+  const WHERE = 'test-fixture';
+
+  test('no selection leaves the manifest exactly as it was', () => {
+    expect(narrowManifest(manifest, undefined, WHERE)).toBe(manifest);
+    expect(narrowManifest(manifest, 'all', WHERE)).toBe(manifest);
+  });
+
+  test('a prefix keeps every operation under it', () => {
+    const only = narrowManifest(manifest, ['payments'], WHERE);
+    expect(only.ops.length).toBeGreaterThan(0);
+    expect(only.ops.every((o) => o.op.startsWith('payments.'))).toBe(true);
+    expect(only.ops.length).toBeLessThan(manifest.ops.length);
+  });
+
+  test('an exact name keeps one operation', () => {
+    const one = narrowManifest(manifest, ['payments.create'], WHERE);
+    expect(one.ops).toHaveLength(1);
+    expect(one.ops[0]!.op).toBe('payments.create');
+  });
+
+  /**
+   * A typo must not quietly hand the model a smaller API than the author
+   * believed — that difference would read as a model result.
+   */
+  test('a name matching nothing is refused, not ignored', () => {
+    expect(() => narrowManifest(manifest, ['paymnets'], WHERE)).toThrow(/no operation in the manifest matches/);
+    expect(() => narrowManifest(manifest, ['payments.create', 'nope'], WHERE)).toThrow(/nope/);
+  });
+
+  test('the narrowed manifest is what the surface is built from', () => {
+    const one = narrowManifest(manifest, ['payments.create'], WHERE);
+    const surface = openSurface('tools', one, async () => ({ status: 200, body: {} }));
+    expect(surface.tools).toHaveLength(1);
+    expect(definitionOf(surface.tools[0]!).name).toBe(toolName('payments.create'));
+  });
+
+  test('the world is untouched: narrowing hides tools, not operations', async () => {
+    const one = narrowManifest(manifest, ['payments.create'], WHERE);
+    expect(one.ops).toHaveLength(1);
+    // The original is unchanged, so a task step can still reach everything.
+    expect(manifest.ops.length).toBeGreaterThan(1);
+  });
 });

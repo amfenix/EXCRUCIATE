@@ -52,6 +52,8 @@ export interface EpisodeRow {
   memory: 'session' | 'fresh';
   resetTools?: boolean;
   faults: 'none' | 'all' | string[];
+  /** Which of the fixture's operations the model is shown. `all` by default. */
+  tools: 'all' | string[];
   repeat: number;
   parallelToolCalls?: boolean;
   fixture?: string;

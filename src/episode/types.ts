@@ -107,6 +107,12 @@ export interface Episode {
   /** Ours: where the handler runs. The model never learns which. */
   mode: Mode;
   surface: SurfaceKind;
+  /**
+   * Which of the fixture's operations become tools. `all`, or a list of op
+   * names and prefixes. The world is unaffected: an operation the model cannot
+   * see is still there, and a task step can still call it.
+   */
+  tools?: 'all' | string[];
   model: string;
   /** `fresh` discards the conversation before every say-step. A direct probe of
    *  whether anything about the agent's identity survives a call. */

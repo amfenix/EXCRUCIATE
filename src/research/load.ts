@@ -107,6 +107,7 @@ function build(root: string, meta: Research, row: EpisodeRow, task: Task | undef
     model: row.model,
     memory: row.memory,
     faults: row.faults,
+    tools: row.tools,
     // Carried into the artefact so a run folder can be reported on by itself.
     row: { id: row.id, task: row.task, ...(row.notes !== undefined ? { notes: row.notes } : {}) },
     init: task?.init ?? { system: '', clock: { now: '2000-01-01 00:00:00', business_day: 1 } },

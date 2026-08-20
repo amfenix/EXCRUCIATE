@@ -103,6 +103,29 @@ export function thinking(p: Problems, where: string, value: unknown): ThinkingCo
 }
 
 /**
+ * Which operations the model is shown: `all`, or a comma-separated list of op
+ * names and prefixes — `payments, accounts.list` keeps every `payments.*` op
+ * and `accounts.list` alone.
+ *
+ * Blank means `all`, so a workbook without the column behaves as it always did.
+ */
+export function tools(p: Problems, where: string, value: unknown): 'all' | string[] {
+  if (isBlank(value)) return 'all';
+  const v = text(value);
+  if (v.toLowerCase() === 'all') return 'all';
+
+  const names = v
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s !== '');
+  if (names.length === 0) {
+    p.add(where, `tools must be all, or a comma-separated list of operations \u2014 got "${v}"`);
+    return 'all';
+  }
+  return names;
+}
+
+/**
  * `none` | `all` | `a, b`.
  *
  * Blank means `none`, deliberately: the control run is what every fault result

@@ -16,7 +16,7 @@ import { FixtureError } from '../errors.ts';
 import { validateStatic } from '../preflight.ts';
 import { agentFor, dispatchFor } from '../agent.ts';
 import { openSurface } from '../surface/index.ts';
-import { manifestFor } from '../surface/manifest.ts';
+import { manifestFor, narrow } from '../surface/manifest.ts';
 import { withFaults } from '../fault/dispatch.ts';
 import { advance } from './clock.ts';
 import { grade, validateChecks } from './grade.ts';
@@ -48,7 +48,7 @@ export async function runEpisode(raw: Episode, _opts: RunOptions = {}): Promise<
   // Free, and before anything is spent: a bad model id or an impossible pairing
   // of temperature and thinking should never reach an API call.
   validateStatic(spec);
-  const manifest = await manifestFor(spec.fixture);
+  const manifest = narrow(await manifestFor(spec.fixture), spec.tools, spec.fixture);
   // The artefact directory has to exist before the world file is opened in it.
   if (spec.out !== undefined) mkdirSync(spec.out, { recursive: true });
   const session = await init({
