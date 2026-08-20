@@ -280,6 +280,34 @@ export function readSpec(path: string): Spec {
  * Read-only, so nothing is written beside the evidence — and a truncated
  * artefact from a killed run is skipped rather than losing the whole folder.
  */
+/**
+ * Every number this episode measured: the evidence columns the checks already
+ * selected, plus whatever the registered impact queries ask for.
+ *
+ * Evidence columns cost nothing to carry and are often the figure the business
+ * cares about, so they come along whether or not a hypothesis asked.
+ */
+function measuresOf(
+  db: Database,
+  checks: Array<{ name: string; evidence: Record<string, unknown> }>,
+  impacts: Array<{ id: string; sql: string }>,
+  owners: Map<string, { id: string; sql: string }>
+): Record<string, number> {
+  const measures: Record<string, number> = {};
+  for (const check of checks) {
+    for (const [key, value] of Object.entries(check.evidence)) {
+      if (typeof value === 'number') measures[`${check.name}.${key}`] = value;
+    }
+  }
+  for (const impact of impacts) {
+    for (const [key, value] of Object.entries(runImpact(db, impact.sql, impact.id))) {
+      claim(key, impact, owners);
+      measures[key] = value;
+    }
+  }
+  return measures;
+}
+
 function readEpisode(
   path: string,
   impacts: Array<{ id: string; sql: string }>,
@@ -301,20 +329,7 @@ function readEpisode(
       evidence: jsonObject(c['evidence']),
     }));
 
-    const measures: Record<string, number> = {};
-    // Evidence columns are measurements the author already asked for; they cost
-    // nothing to carry and are often the number the business cares about.
-    for (const check of checks) {
-      for (const [key, value] of Object.entries(check.evidence)) {
-        if (typeof value === 'number') measures[`${check.name}.${key}`] = value;
-      }
-    }
-    for (const impact of impacts) {
-      for (const [key, value] of Object.entries(runImpact(db, impact.sql, impact.id))) {
-        claim(key, impact, owners);
-        measures[key] = value;
-      }
-    }
+    const measures = measuresOf(db, checks, impacts, owners);
 
     return {
       id,
@@ -345,8 +360,15 @@ function readEpisode(
       },
       trail: `logs/${id}.log`,
     };
-  } catch {
-    return null;
+  } catch (e) {
+    // A file that is not an episode is a legitimate skip. ANYTHING ELSE IS A
+    // FAULT IN THE EXTRACTION and must not be swallowed: returning null for a
+    // failed impact query once dropped all 121 episodes of a real run and
+    // reported "0 rows, 0 episodes" with no reason given, which reads as a run
+    // that produced nothing rather than a dataset that refused to build.
+    const message = e instanceof Error ? e.message : String(e);
+    if (/no such table: _episode/.test(message)) return null;
+    throw new Error(`${path}: ${message}`, { cause: e });
   } finally {
     db?.close();
   }

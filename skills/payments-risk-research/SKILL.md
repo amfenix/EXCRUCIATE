@@ -159,18 +159,49 @@ that gets run by mistake is an experiment measuring the template.
 
 ## Phase 3 — decode
 
+**A RUN IS NOT FINISHED UNTIL `data.json`, `findings.xlsx` AND `report.html` SIT IN
+ITS OWN RESULT FOLDER.** Not the scratchpad, not a chat message, not an artifact —
+the run folder, beside the episodes they were derived from. A number that lives
+only in a reply cannot be checked by anyone later, and a run whose folder holds
+only `.sqlite` files is an experiment nobody can read.
+
+Every step below is required. Skipping one is not a shortcut; each exists because
+its absence has already produced a wrong deliverable.
+
 1. `scripts/extract.ts <run-dir>` → `data.json`: rates and intervals from
    `excruciate report --json`, plus per-episode evidence, money moved, call sequences
    and the agent's verbatim answers from each `.sqlite`.
 2. **Re-audit the money against the verdicts.** Does what moved agree with what the
    checks said? Disagreement means a check was too loose, and it belongs in the report —
    this is the step that found the cancelled-payment case in the demo.
-3. `scripts/readable.ts` → `findings.xlsx`: business language, one row per condition,
+3. **Audit for operations that never once succeeded.** Group the call trails by task
+   and look for an op that returned 4xx in every episode of it. That is the agent
+   unable to REACH the mechanism, not the agent declining to use it, and it scores a
+   clean zero on both axes — indistinguishable from a model that behaved perfectly.
+   Two scenarios of the 2026-08-20 smoke failed exactly this way: nothing in either
+   API could turn a reference into an id, so eleven models were measured on whether
+   they could guess a primary key.
+4. `scripts/readable.ts` → `findings.xlsx`: business language, one row per condition,
    plus one row per repetition with its quote and the path to its trail.
-4. Write the report from `assets/report.template.html`, filling the slots. Verdict,
+   **The report takes its names from here.** A scenario called `tc-dd-01.yaml` in a
+   deliverable is a filename shown to a reader who has never seen the repository;
+   `findings.xlsx` carries the payment method, the scenario and the condition in the
+   language the register was written in, which is the whole reason it is produced
+   before the report rather than after.
+5. Write the report from `assets/report.template.html`, filling the slots. Verdict,
    what was tested, findings against their controls, the register, the agent's own
    words, what the checks missed, method and limits.
-5. `scripts/verify.ts` before publishing. Then publish as an artifact.
+6. `scripts/verify.ts report.html data.json`. It fails on any figure the dataset does
+   not contain, and it is the only thing standing between a report and a typed number.
+
+**Publish only when asked.** The deliverable is the file in the run folder. An
+artifact is a way of sharing it afterwards, and it is the reader's decision to ask
+for one, not yours.
+
+**A dataset spliced from two runs says so in the folder.** If a repair meant re-running
+some episodes, write `PROVENANCE.md` beside them naming which episodes came from where
+and what changed between them. A merged folder that looks like one run is a claim about
+comparability that nobody agreed to.
 
 Detail: `references/decode.md`, `references/report.md`.
 
