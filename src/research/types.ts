@@ -52,8 +52,11 @@ export interface EpisodeRow {
   memory: 'session' | 'fresh';
   resetTools?: boolean;
   faults: 'none' | 'all' | string[];
-  /** Which of the fixture's operations the model is shown. `all` by default. */
-  tools: 'all' | string[];
+  /**
+   * From the `tools` column: the name of a list the task file declares. Absent
+   * — a blank cell, or `all` — is every operation the fixture has.
+   */
+  toolset?: string;
   repeat: number;
   parallelToolCalls?: boolean;
   fixture?: string;
@@ -75,6 +78,14 @@ export interface Task {
    * means nothing.
    */
   surfaces?: SurfaceKind[];
+  /**
+   * Named lists of operations a row may ask to be shown, `name: [op, ...]`.
+   *
+   * Here rather than on the row for the same reason faults are: the task knows
+   * which operations the work needs, and naming the list once means sixty rows
+   * cannot disagree about what `minimal` contained.
+   */
+  tools?: Record<string, string[]>;
   init: Init;
   steps: Step[];
   grade: Grade;

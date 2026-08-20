@@ -37,6 +37,7 @@ export interface MatrixArgs {
   surfaces?: string;
   memory?: string;
   faults?: string;
+  tools?: string;
   temperature?: string;
   thinking?: string;
   repeat?: string;
@@ -49,6 +50,7 @@ interface Cell {
   surface: string;
   memory: string;
   faults: string;
+  tools: string;
   temperature: string;
   thinking: string;
 }
@@ -111,7 +113,8 @@ async function plan(
   // Faults are per-task — each case declares its own by name — so they cross
   // inside the loop rather than being one more axis of the whole matrix.
   for (const task of axes.tasks) {
-    cells.push(...cellsFor(task, await faultSetsFor(task, args, tasks), axes));
+    const faultSets = await faultSetsFor(task, args, tasks);
+    cells.push(...cellsFor(task, faultSets, await toolSetsFor(task, args, tasks), axes));
   }
   return cells;
 }
@@ -142,6 +145,27 @@ async function axesOf(args: MatrixArgs, defaultSurface: string, files: string[])
   };
 }
 
+/**
+ * The tool lists to run one task under. Blank means the fixture's whole API.
+ *
+ * Per-task, like faults, because a task declares its own lists by name. Unlike
+ * faults, `all` is NOT added for free: there is no baseline that every narrow
+ * surface has to be read against — `minimal` against `all` is one comparison
+ * among several, and adding rows nobody asked for is its own surprise.
+ */
+async function toolSetsFor(task: string, args: MatrixArgs, tasks: Map<string, Task>): Promise<string[]> {
+  const declared = Object.keys(tasks.get(task)?.tools ?? {});
+  if (declared.length === 0) return [''];
+
+  const wanted =
+    args.tools !== undefined
+      ? split(args.tools).filter((t) => t === 'all' || declared.includes(t))
+      : await chooseMany(`Tool lists for ${task}?`, ['all', ...declared], ['all']);
+
+  const chosen = wanted.map((t) => (t === 'all' ? '' : t));
+  return chosen.length === 0 ? [''] : [...new Set(chosen)];
+}
+
 /** The faults to run for one task, with the control always included. */
 async function faultSetsFor(task: string, args: MatrixArgs, tasks: Map<string, Task>): Promise<string[]> {
   const declared = declaredFaults(tasks.get(task));
@@ -155,18 +179,25 @@ async function faultSetsFor(task: string, args: MatrixArgs, tasks: Map<string, T
   return [...new Set(['none', ...wanted])];
 }
 
-const cellsFor = (task: string, faultSets: string[], axes: Axes): Cell[] =>
-  product([axes.models, axes.surfaces, axes.memories, axes.temperatures, axes.thinkings, faultSets]).map(
-    ([model, surface, memory, temperature, thinking, faults]) => ({
-      task,
-      model: model!,
-      surface: surface!,
-      memory: memory!,
-      temperature: temperature!,
-      thinking: thinking!,
-      faults: faults!,
-    })
-  );
+const cellsFor = (task: string, faultSets: string[], toolSets: string[], axes: Axes): Cell[] =>
+  product([
+    axes.models,
+    axes.surfaces,
+    axes.memories,
+    axes.temperatures,
+    axes.thinkings,
+    faultSets,
+    toolSets,
+  ]).map(([model, surface, memory, temperature, thinking, faults, tools]) => ({
+    task,
+    model: model!,
+    surface: surface!,
+    memory: memory!,
+    temperature: temperature!,
+    thinking: thinking!,
+    faults: faults!,
+    tools: tools!,
+  }));
 
 /**
  * Cartesian product, in axis order.
@@ -201,6 +232,7 @@ const idOf = (c: Cell): string =>
       c.temperature === '' ? '' : `t${c.temperature}`,
       c.thinking === '' ? '' : c.thinking,
       c.faults === 'none' ? 'clean' : c.faults.replace(/,/g, '+'),
+      c.tools,
     ]
       .filter((part) => part !== '')
       .join('__')
@@ -223,6 +255,7 @@ function valuesFor(cell: Cell, id: string, repeat: string): Record<string, strin
     thinking: cell.thinking,
     memory: cell.memory,
     faults: cell.faults,
+    tools: cell.tools,
     repeat,
   };
 }

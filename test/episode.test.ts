@@ -297,3 +297,33 @@ describe('a world on disk', () => {
     }
   }, 30_000);
 });
+
+/**
+ * The runner narrows the surface before the model ever sees it.
+ *
+ * Cheap to prove without a provider: a name matching nothing has to stop the
+ * episode rather than quietly hand over a smaller API, and that refusal happens
+ * while the surface is being built, before the first turn.
+ */
+describe('the row decides how much API the model gets', () => {
+  test('a tools list that names nothing real stops the episode', async () => {
+    await expect(runEpisode(episode({ tools: ['paymnets'] }))).rejects.toThrow(
+      /no operation in the manifest matches paymnets/
+    );
+  }, 30_000);
+
+  test('a real list runs, and the world is untouched by the narrowing', async () => {
+    const result = await runEpisode(
+      episode({
+        tools: ['payments.create'],
+        // A step the model cannot see the tool for still moves the world: the
+        // narrowing hides tools, it does not remove operations.
+        steps: [{ do: [{ sql: `UPDATE accounts SET balance = 42 WHERE id = 'OPERATING'` }] }],
+      })
+    );
+    // Void, because no step reached the model — but the write went in, which is
+    // the point: the row hid a tool, not an operation.
+    const audit = result.audit as Array<{ actor: string }>;
+    expect(audit.some((a) => a.actor === 'system')).toBe(true);
+  }, 30_000);
+});

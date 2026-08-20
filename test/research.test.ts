@@ -448,3 +448,112 @@ describe('surface per row', () => {
     expect(await withSurface('search')).toBe('search');
   });
 });
+
+/**
+ * `tools` on a row names a list the TASK FILE declares, exactly as `faults` does.
+ *
+ * The lists are not in the workbook because they do not fit: a fixture with
+ * forty-four operations gives a cell a dozen dotted names, and the same dozen
+ * pasted down sixty rows is how two rows end up quietly different from each
+ * other. Named once in the task, they are reviewed with the work they belong to.
+ */
+describe('named tool lists', () => {
+  const HEAD = [...HEADER, 'tools'];
+
+  const WITH_LISTS = `${TASK}
+tools:
+  minimal: [payments.create, accounts.get]
+  payments: [payments]
+`;
+
+  const book = async (task: string, tools: string) => {
+    const dir = mkdtempSync(join(tmpdir(), 'excruciate-tools-'));
+    dirs.push(dir);
+    mkdirSync(join(dir, 'tasks'), { recursive: true });
+    writeFileSync(join(dir, 'research.yaml'), META);
+    writeFileSync(join(dir, 'tasks', 't.yaml'), task);
+    const wb = new ExcelJS.Workbook();
+    const sheet = wb.addWorksheet('episodes');
+    sheet.addRow(HEAD);
+    sheet.addRow(['e1', ...ROW.slice(1), tools]);
+    await wb.xlsx.writeFile(join(dir, 'episodes.xlsx'));
+    return dir;
+  };
+
+  const complaints = async (task: string, tools: string): Promise<string[]> => {
+    try {
+      await loadResearch(await book(task, tools));
+      return [];
+    } catch (e) {
+      if (e instanceof ResearchError) return e.problems.map((x) => `${x.where}: ${x.message}`);
+      throw e;
+    }
+  };
+
+  test('a blank cell is the whole API, so an old workbook is unchanged', async () => {
+    const r = await loadResearch(await book(WITH_LISTS, ''));
+    expect(r.episodes[0]!.episode.tools).toBe('all');
+  });
+
+  test('`all` says the same thing out loud', async () => {
+    const r = await loadResearch(await book(WITH_LISTS, 'all'));
+    expect(r.episodes[0]!.episode.tools).toBe('all');
+  });
+
+  test('a name resolves to the list the task declared', async () => {
+    const r = await loadResearch(await book(WITH_LISTS, 'minimal'));
+    expect(r.episodes[0]!.episode.tools).toEqual(['payments.create', 'accounts.get']);
+  });
+
+  /**
+   * The failure this column exists to make visible: a surface silently wider
+   * than the author believed would read as a model result.
+   */
+  test('a name the task never declared is refused, and says what it does have', async () => {
+    const said = await complaints(WITH_LISTS, 'miniml');
+    expect(said.join('\n')).toContain('miniml');
+    expect(said.join('\n')).toContain('minimal, payments');
+  });
+
+  test('a task with no lists at all still says so plainly', async () => {
+    const said = await complaints(TASK, 'minimal');
+    expect(said.join('\n')).toContain('declares no tool lists');
+  });
+
+  /** The natural mistake, given the column used to take one. */
+  test('a comma-separated cell points at the task file', async () => {
+    const said = await complaints(WITH_LISTS, 'payments, accounts.get');
+    expect(said.join('\n')).toContain('names one list declared in the task file');
+  });
+
+  /**
+   * Checked against the fixture's real manifest while it is still free. The
+   * runner would refuse too, but that is one episode into a paid run.
+   */
+  test('a list naming an operation the fixture lacks is caught at load', async () => {
+    const said = await complaints(`${TASK}\ntools:\n  minimal: [payments.creat]\n`, 'minimal');
+    expect(said.join('\n')).toContain('payments.creat');
+    expect(said.join('\n')).toContain('tools list "minimal"');
+  });
+
+  /** Same reason disabled rows are validated: it is wrong the day it is written. */
+  test('an unused list is checked too', async () => {
+    const said = await complaints(`${TASK}\ntools:\n  never: [nope.at.all]\n`, '');
+    expect(said.join('\n')).toContain('nope.at.all');
+  });
+
+  test('`all` cannot be a list name, because a row already means it', async () => {
+    const said = await complaints(`${TASK}\ntools:\n  all: [payments]\n`, '');
+    expect(said.join('\n')).toContain('reserved');
+  });
+
+  test('a list selecting nothing is not a surface', async () => {
+    const said = await complaints(`${TASK}\ntools:\n  empty: []\n`, '');
+    expect(said.join('\n')).toContain('names no operations');
+  });
+
+  test('the task file must give a mapping, not a bare list', async () => {
+    const said = await complaints(`${TASK}\ntools: [payments]\n`, '');
+    expect(said.join('\n')).toContain('mapping of list name to operations');
+  });
+});

@@ -39,10 +39,11 @@ export function parseTask(source: string, where: string, p: Problems): Task {
     ...(isBlank(doc['name']) ? {} : { name: text(doc['name']) }),
     ...(isBlank(doc['maxSteps']) ? {} : { maxSteps: integer(p, where, 'maxSteps', doc['maxSteps'], 12) }),
     ...(doc['surfaces'] === undefined ? {} : { surfaces: parseSurfaces(doc['surfaces'], where, p) }),
+    ...(doc['tools'] === undefined ? {} : { tools: parseToolsets(doc['tools'], where, p) }),
   };
 
   for (const key of Object.keys(doc)) {
-    if (!['name', 'maxSteps', 'surfaces', 'init', 'steps', 'grade'].includes(key)) {
+    if (!['name', 'maxSteps', 'surfaces', 'tools', 'init', 'steps', 'grade'].includes(key)) {
       p.add(where, `unknown key "${key}"`);
     }
   }
@@ -52,6 +53,36 @@ export function parseTask(source: string, where: string, p: Problems): Task {
 function parseSurfaces(raw: unknown, where: string, p: Problems): SurfaceKind[] {
   const list = Array.isArray(raw) ? raw : [raw];
   return list.map((entry) => oneOf(p, where, 'surfaces', entry, SURFACES, 'tools'));
+}
+
+/**
+ * Named lists of operations, which a row asks for by name.
+ *
+ * A name matching no operation is caught later, against the fixture's real
+ * manifest — here we only insist the shape is a mapping of name to a
+ * non-empty list, because a list that selects nothing is not a surface.
+ */
+function parseToolsets(raw: unknown, where: string, p: Problems): Record<string, string[]> {
+  const at = `${where} tools`;
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    p.add(at, 'must be a mapping of list name to operations, e.g. `minimal: [payments.create, accounts.get]`');
+    return {};
+  }
+
+  const sets: Record<string, string[]> = {};
+  for (const [name, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (name.toLowerCase() === 'all') {
+      p.add(at, '`all` is reserved \u2014 a row leaves the cell blank, or writes all, to see every operation');
+      continue;
+    }
+    const ops = (Array.isArray(value) ? value : [value]).map((v) => text(v)).filter((v) => v !== '');
+    if (ops.length === 0) {
+      p.add(`${at} ${name}`, 'names no operations, so it would hide the whole API rather than narrow it');
+      continue;
+    }
+    sets[name] = ops;
+  }
+  return sets;
 }
 
 function parseInit(raw: unknown, where: string, p: Problems): Init {

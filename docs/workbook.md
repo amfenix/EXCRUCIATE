@@ -28,6 +28,7 @@ otherwise silently ignored.
 | `resetTools` | no | `yes`/`no` | `no` | with `fresh` on the `search` surface, also forget the discovered API |
 | `parallelToolCalls` | no | `yes`/`no` | provider default | whether the model may emit several tool calls per turn |
 | `faults` | no | `none`, `all`, or names | `none` | which declared faults are live |
+| `tools` | no | a list name, or `all` | `all` | how much of the API the model sees |
 | `repeat` | no | integer | `1` | how many times to run this row |
 | `fixture` | no | path | research default | override the world for one row |
 | `notes` | no | text | — | yours; carried into `results.xlsx` |
@@ -45,6 +46,13 @@ rate is what tells you whether you have a finding: 0/5 is `[0.000, 0.434]` and
 step where a failure is meaningful; the row only decides which are live. Naming
 a fault the task never declared is a load error, because the alternative is a
 silent clean run that reads as a model that came to no harm.
+
+**`tools` names a list the task declared**, the same way `faults` does — see
+[task files](tasks.md#tool-lists). The lists are not in the workbook because they
+do not fit: a fixture with forty-four operations gives a cell a dozen dotted
+names, and the same dozen pasted down sixty rows is how two rows end up quietly
+different. Blank means the whole API. A name the task never declared is a load
+error, because a surface wider than the author intended reads as a model result.
 
 **Always keep a control.** `faults: none` for the same combination is what every
 fault rate is read against. `excruciate matrix` adds it for you and you should

@@ -103,26 +103,27 @@ export function thinking(p: Problems, where: string, value: unknown): ThinkingCo
 }
 
 /**
- * Which operations the model is shown: `all`, or a comma-separated list of op
- * names and prefixes — `payments, accounts.list` keeps every `payments.*` op
- * and `accounts.list` alone.
+ * Which named tool list from the task file the model is shown.
  *
- * Blank means `all`, so a workbook without the column behaves as it always did.
+ * The cell holds ONE NAME, not a list of operations. A fixture with forty-four
+ * operations does not fit in a spreadsheet cell, and pasting the same twelve
+ * names down sixty rows is how two rows end up quietly different from each
+ * other. The lists live in the task file under `tools:`, named once and
+ * reviewed alongside the task they belong to — exactly as faults are.
+ *
+ * Blank means every operation the fixture has, so a workbook without the column
+ * behaves as it always did. `all` says the same thing out loud, for a row where
+ * the whole surface is the point of the comparison.
  */
-export function tools(p: Problems, where: string, value: unknown): 'all' | string[] {
-  if (isBlank(value)) return 'all';
+export function toolset(p: Problems, where: string, value: unknown): string | undefined {
+  if (isBlank(value)) return undefined;
   const v = text(value);
-  if (v.toLowerCase() === 'all') return 'all';
-
-  const names = v
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s) => s !== '');
-  if (names.length === 0) {
-    p.add(where, `tools must be all, or a comma-separated list of operations \u2014 got "${v}"`);
-    return 'all';
+  if (v.toLowerCase() === 'all') return undefined;
+  if (v.includes(',')) {
+    p.add(where, `tools names one list declared in the task file, not a list of operations \u2014 got "${v}"`);
+    return undefined;
   }
-  return names;
+  return v;
 }
 
 /**

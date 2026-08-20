@@ -37,12 +37,10 @@ export function narrow(manifest: Manifest, tools: 'all' | string[] | undefined, 
   const unknown = tools.filter((t) => !matched.has(t));
 
   if (unknown.length > 0) {
-    throw new FixtureError(
-      `${where}: tools names ${unknown.join(', ')}, which no operation in the manifest matches`
-    );
+    throw new FixtureError(`${where}: no operation in the manifest matches ${unknown.join(', ')}`);
   }
   if (kept.length === 0) {
-    throw new FixtureError(`${where}: tools selected no operations at all`);
+    throw new FixtureError(`${where}: selects no operations at all`);
   }
   return { ...manifest, ops: kept };
 }

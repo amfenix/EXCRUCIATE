@@ -10,6 +10,9 @@ to draw from it.
 name: pay the rent, with an acknowledgement that may go missing
 maxSteps: 12                    # model turns allowed within one say-step
 
+tools:                          # named lists a row may ask for by name
+  minimal: [payments.create, accounts.get]
+
 init:
   system: '@docs/policy.md'     # or inline text
   clock: 2026-08-18 09:12:00    # virtual time, explicit
@@ -107,6 +110,39 @@ must not read as a clean run.
 
 Only one fault fires per step at most: a batch fails at its earliest failing
 statement, so pointing at more than one within a step would be a fiction.
+
+## Tool lists
+
+How much of the API the model can see is a **variable under study**, not a
+property of the fixture. An agent choosing between six payment methods is a
+different experiment from one handed a single `create`, and both are worth
+running against the same world.
+
+```yaml
+tools:
+  minimal: [payments.create, accounts.get]
+  direct-debit: [mandates, collections, collectionschedules]
+  everything-but-cards: [payments, accounts, beneficiaries, mandates, vrp]
+```
+
+A name matches an operation **exactly or by prefix**: `payments` keeps every
+`payments.*`, `payments.create` keeps one.
+
+The lists live here, not in the workbook, for the same reason faults do — the
+task knows which operations the work needs. It is also the only shape that fits:
+a fixture with forty-four operations gives a cell a dozen dotted names, and the
+same dozen pasted down sixty rows is how two rows end up quietly different from
+each other. A row names one list; `excruciate matrix --tools minimal,all` sweeps
+several.
+
+**A name that matches nothing is refused at load**, against the fixture's real
+manifest, before anything is spent — including lists no row currently uses. A
+typo would otherwise hand the model a surface the author never intended, and the
+difference would read as a model result.
+
+**The world is untouched.** An operation the model cannot see still exists, and a
+task step can still call it. That is what makes this a surface variable and not a
+different fixture.
 
 ## Grading
 

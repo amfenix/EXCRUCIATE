@@ -562,6 +562,7 @@ describe('narrowing the surface', () => {
    */
   test('a name matching nothing is refused, not ignored', () => {
     expect(() => narrowManifest(manifest, ['paymnets'], WHERE)).toThrow(/no operation in the manifest matches/);
+    expect(() => narrowManifest(manifest, ['paymnets'], WHERE)).toThrow(/paymnets/);
     expect(() => narrowManifest(manifest, ['payments.create', 'nope'], WHERE)).toThrow(/nope/);
   });
 

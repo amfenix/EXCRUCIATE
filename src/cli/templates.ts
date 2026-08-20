@@ -38,6 +38,14 @@ export const TASK_YAML = `# What the test IS. Nothing here says which model runs
 name: pay the rent, with an acknowledgement that may go missing
 maxSteps: 12
 
+# Named lists of operations a row may ask to be shown, by name, in the \`tools\`
+# column. Declared here for the same reason faults are: the task knows what the
+# work needs, and naming a list once means sixty rows cannot disagree about what
+# was in it. A row that names none sees the fixture's whole API, which is itself
+# a comparison worth running — four tools and forty are different experiments.
+tools:
+  minimal: [payments.create, accounts.get]
+
 init:
   system: '@docs/policy.md'
   clock: 2026-08-18 09:12:00

@@ -20,9 +20,11 @@ import { fileRefsOf } from '../episode/text.ts';
 import { Problems } from './parse.ts';
 import { parseResearch } from './meta.ts';
 import { parseTask } from './task.ts';
+import { manifestFor, narrow } from '../surface/manifest.ts';
 import { readWorkbook } from './workbook.ts';
 import { ResearchError } from './types.ts';
 import type { Episode } from '../episode/types.ts';
+import type { Manifest } from '../surface/types.ts';
 import type { EpisodeRow, Research, Task } from './types.ts';
 
 export interface LoadedEpisode {
@@ -63,9 +65,10 @@ export async function loadResearch(dir: string, opts: LoadOptions = {}): Promise
   if (!p.ok) throw new ResearchError(p.list);
 
   const tasks = await readTasks(root, meta, rows, p);
-  const built = rows.map((row) => build(root, meta, row, tasks.get(row.task)));
+  const built = rows.map((row) => build(root, meta, row, tasks.get(row.task), p));
 
   validateAll(built, p);
+  await validateToolsets(built, p);
   if (!p.ok) throw new ResearchError(p.list);
 
   return {
@@ -95,7 +98,13 @@ async function readTasks(
   return tasks;
 }
 
-function build(root: string, meta: Research, row: EpisodeRow, task: Task | undefined): LoadedEpisode {
+function build(
+  root: string,
+  meta: Research,
+  row: EpisodeRow,
+  task: Task | undefined,
+  p: Problems
+): LoadedEpisode {
   const episode: Episode = {
     id: row.id,
     fixture: resolve(root, row.fixture ?? meta.fixture),
@@ -107,7 +116,7 @@ function build(root: string, meta: Research, row: EpisodeRow, task: Task | undef
     model: row.model,
     memory: row.memory,
     faults: row.faults,
-    tools: row.tools,
+    tools: toolsFor(row, task, p),
     // Carried into the artefact so a run folder can be reported on by itself.
     row: { id: row.id, task: row.task, ...(row.notes !== undefined ? { notes: row.notes } : {}) },
     init: task?.init ?? { system: '', clock: { now: '2000-01-01 00:00:00', business_day: 1 } },
@@ -120,6 +129,71 @@ function build(root: string, meta: Research, row: EpisodeRow, task: Task | undef
     ...(task?.maxSteps !== undefined ? { maxSteps: task.maxSteps } : {}),
   };
   return { row, episode, repeat: row.repeat, task };
+}
+
+/**
+ * The row names a list; the task file declares it. Here the two meet.
+ *
+ * An undeclared name is a problem rather than a quiet fallback to everything: a
+ * typo that widened the surface back to the whole API would show up as a model
+ * difference, which is the failure this column exists to make visible.
+ */
+function toolsFor(row: EpisodeRow, task: Task | undefined, p: Problems): 'all' | string[] {
+  if (row.toolset === undefined) return 'all';
+  // A missing task file is already reported; saying it twice helps nobody.
+  if (task === undefined) return 'all';
+
+  const declared = task.tools ?? {};
+  const list = declared[row.toolset];
+  if (list !== undefined) return list;
+
+  const names = Object.keys(declared);
+  p.add(
+    `row ${row.line} (${row.id || 'no id'})`,
+    names.length === 0
+      ? `tools names "${row.toolset}", but task ${row.task} declares no tool lists`
+      : `tools names "${row.toolset}", which task ${row.task} does not declare \u2014 it has ${names.join(', ')}`
+  );
+  return 'all';
+}
+
+/**
+ * Prove every declared list names operations the fixture really has.
+ *
+ * The runner would refuse anyway, but that is one episode into a paid run. Every
+ * list is checked, not only the ones rows currently use — same reason disabled
+ * rows are validated: a list is wrong on the day someone names it, and that is
+ * always a day when they are in a hurry.
+ */
+async function validateToolsets(built: LoadedEpisode[], p: Problems): Promise<void> {
+  const manifests = new Map<string, Manifest | null>();
+  const done = new Set<string>();
+
+  for (const { row, episode, task } of built) {
+    if (task?.tools === undefined) continue;
+    // One task against one fixture is one check, however many rows say so.
+    const key = `${row.task}\u0000${episode.fixture}`;
+    if (done.has(key)) continue;
+    done.add(key);
+
+    if (!manifests.has(episode.fixture)) {
+      let manifest: Manifest | null = null;
+      // A fixture that will not load at all is already reported by validateRow.
+      try {
+        manifest = await manifestFor(episode.fixture);
+      } catch {
+        manifest = null;
+      }
+      manifests.set(episode.fixture, manifest);
+    }
+
+    const manifest = manifests.get(episode.fixture) ?? null;
+    if (manifest === null) continue;
+
+    for (const [name, ops] of Object.entries(task.tools)) {
+      collect(p, `task ${row.task}`, () => void narrow(manifest, ops, `tools list "${name}"`));
+    }
+  }
 }
 
 function validateAll(built: LoadedEpisode[], p: Problems): void {
