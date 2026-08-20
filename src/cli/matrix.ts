@@ -146,12 +146,13 @@ async function axesOf(args: MatrixArgs, defaultSurface: string, files: string[])
 }
 
 /**
- * The tool lists to run one task under. Blank means the fixture's whole API.
+ * The tool lists to run one task under. Blank — nothing chosen — is the whole API.
  *
  * Per-task, like faults, because a task declares its own lists by name. Unlike
- * faults, `all` is NOT added for free: there is no baseline that every narrow
- * surface has to be read against — `minimal` against `all` is one comparison
- * among several, and adding rows nobody asked for is its own surprise.
+ * faults nothing is added for free: there is no baseline every narrow surface
+ * has to be read against, so choosing `minimal` gives you `minimal` and adding
+ * rows nobody asked for would be its own surprise. Run matrix again without
+ * `--tools` to get the whole-API rows alongside them.
  */
 async function toolSetsFor(task: string, args: MatrixArgs, tasks: Map<string, Task>): Promise<string[]> {
   const declared = Object.keys(tasks.get(task)?.tools ?? {});
@@ -159,11 +160,10 @@ async function toolSetsFor(task: string, args: MatrixArgs, tasks: Map<string, Ta
 
   const wanted =
     args.tools !== undefined
-      ? split(args.tools).filter((t) => t === 'all' || declared.includes(t))
-      : await chooseMany(`Tool lists for ${task}?`, ['all', ...declared], ['all']);
+      ? split(args.tools).filter((t) => declared.includes(t))
+      : await chooseMany(`Tool lists for ${task}?`, declared, []);
 
-  const chosen = wanted.map((t) => (t === 'all' ? '' : t));
-  return chosen.length === 0 ? [''] : [...new Set(chosen)];
+  return wanted.length === 0 ? [''] : [...new Set(wanted)];
 }
 
 /** The faults to run for one task, with the control always included. */

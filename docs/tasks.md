@@ -132,8 +132,10 @@ The lists live here, not in the workbook, for the same reason faults do — the
 task knows which operations the work needs. It is also the only shape that fits:
 a fixture with forty-four operations gives a cell a dozen dotted names, and the
 same dozen pasted down sixty rows is how two rows end up quietly different from
-each other. A row names one list; `excruciate matrix --tools minimal,all` sweeps
-several.
+each other. A row names one list and a blank cell is the whole API — the only
+way to say so, since a second spelling would be a second thing to keep in step.
+`excruciate matrix --tools minimal,direct-debit` sweeps several; run it again
+without `--tools` for the whole-API rows alongside them.
 
 **A name that matches nothing is refused at load**, against the fixture's real
 manifest, before anything is spent — including lists no row currently uses. A

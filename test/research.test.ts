@@ -490,13 +490,8 @@ tools:
     }
   };
 
-  test('a blank cell is the whole API, so an old workbook is unchanged', async () => {
+  test('blank is the only way to say the whole API, and an old workbook is unchanged', async () => {
     const r = await loadResearch(await book(WITH_LISTS, ''));
-    expect(r.episodes[0]!.episode.tools).toBe('all');
-  });
-
-  test('`all` says the same thing out loud', async () => {
-    const r = await loadResearch(await book(WITH_LISTS, 'all'));
     expect(r.episodes[0]!.episode.tools).toBe('all');
   });
 
@@ -542,9 +537,13 @@ tools:
     expect(said.join('\n')).toContain('nope.at.all');
   });
 
-  test('`all` cannot be a list name, because a row already means it', async () => {
-    const said = await complaints(`${TASK}\ntools:\n  all: [payments]\n`, '');
-    expect(said.join('\n')).toContain('reserved');
+  /**
+   * There is no `all` keyword. Blank is the only way to say the whole API, so
+   * the word is an ordinary name and has to be declared like any other.
+   */
+  test('`all` in a cell is just a name, refused unless the task declares it', async () => {
+    const said = await complaints(WITH_LISTS, 'all');
+    expect(said.join('\n')).toContain('does not declare');
   });
 
   test('a list selecting nothing is not a surface', async () => {

@@ -71,10 +71,6 @@ function parseToolsets(raw: unknown, where: string, p: Problems): Record<string,
 
   const sets: Record<string, string[]> = {};
   for (const [name, value] of Object.entries(raw as Record<string, unknown>)) {
-    if (name.toLowerCase() === 'all') {
-      p.add(at, '`all` is reserved \u2014 a row leaves the cell blank, or writes all, to see every operation');
-      continue;
-    }
     const ops = (Array.isArray(value) ? value : [value]).map((v) => text(v)).filter((v) => v !== '');
     if (ops.length === 0) {
       p.add(`${at} ${name}`, 'names no operations, so it would hide the whole API rather than narrow it');

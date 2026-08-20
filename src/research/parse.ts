@@ -111,14 +111,14 @@ export function thinking(p: Problems, where: string, value: unknown): ThinkingCo
  * other. The lists live in the task file under `tools:`, named once and
  * reviewed alongside the task they belong to — exactly as faults are.
  *
- * Blank means every operation the fixture has, so a workbook without the column
- * behaves as it always did. `all` says the same thing out loud, for a row where
- * the whole surface is the point of the comparison.
+ * BLANK IS THE ONLY WAY TO SAY "the whole API", and it is enough. There is no
+ * `all` keyword: two spellings of one thing are two things to keep in step, and
+ * the word would be ambiguous the moment a task declared a list called `all`.
+ * A workbook without the column behaves as it always did.
  */
 export function toolset(p: Problems, where: string, value: unknown): string | undefined {
   if (isBlank(value)) return undefined;
   const v = text(value);
-  if (v.toLowerCase() === 'all') return undefined;
   if (v.includes(',')) {
     p.add(where, `tools names one list declared in the task file, not a list of operations \u2014 got "${v}"`);
     return undefined;
