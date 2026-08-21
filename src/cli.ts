@@ -26,6 +26,8 @@ import { cmdInit } from './cli/init.ts';
 import { cmdMatrix } from './cli/matrix.ts';
 import { cmdRun } from './cli/run.ts';
 import { cmdReport } from './cli/report.ts';
+import { cmdCombine } from './cli/combine.ts';
+import { cmdRuns } from './cli/runs.ts';
 import { loadResearch } from './research/load.ts';
 import { verifyPlans } from './episode/plans.ts';
 import type { PlanProblem } from './episode/plans.ts';
@@ -33,6 +35,8 @@ import type { ModelsArgs } from './cli/models.ts';
 import type { InitArgs } from './cli/init.ts';
 import type { MatrixArgs } from './cli/matrix.ts';
 import type { ReportArgs } from './cli/report.ts';
+import type { CombineArgs } from './cli/combine.ts';
+import type { RunsArgs } from './cli/runs.ts';
 import type { RunArgs } from './cli/run.ts';
 import type { AuditRow, JournalRow } from './types.ts';
 import type { CallResult, Mode, Session } from './runner.ts';
@@ -49,6 +53,8 @@ const USAGE = `excruciate <command> [args]
   run     <dir> [--experiment name] [--only id,...] [--concurrency n]
                 [--limit n] [--resume] [--dry] [--no-preflight]
   report  <run-dir | research-dir> [--run name] [--write] [--json]
+  combine <dir> --name n --runs a,b[,c] [--regardless]
+  runs    <dir> [--mark run --as keep|junk] [--note run --as '…'] [--clean [--yes]]
   check   <research-dir>
 
   models  [query] [--provider p] [--live] [--json] [--limit n]
@@ -291,7 +297,20 @@ function printEpisode(result: EpisodeResult): void {
   console.log(`replay    ${result.replay.ok ? 'audit reproduced exactly' : `MISMATCH — ${result.replay.reason}`}`);
 }
 
-const COMMANDS = ['init', 'matrix', 'run', 'report', 'check', 'models', 'keys', 'call', 'surface', 'ask'];
+const COMMANDS = [
+  'init',
+  'matrix',
+  'run',
+  'report',
+  'combine',
+  'runs',
+  'check',
+  'models',
+  'keys',
+  'call',
+  'surface',
+  'ask',
+];
 
 /**
  * Internal, and deliberately absent from the usage text.
@@ -337,6 +356,10 @@ async function main(): Promise<number> {
   if (argv[0] === 'report') {
     return await cmdReport(freeArgs<ReportArgs>(argv.slice(1), { dir: '.', write: false, json: false }));
   }
+  if (argv[0] === 'combine') {
+    return await cmdCombine(freeArgs<CombineArgs>(argv.slice(1), { dir: '.', regardless: false }));
+  }
+  if (argv[0] === 'runs') return await cmdRuns(freeArgs<RunsArgs>(argv.slice(1), { dir: '.' }));
 
   const args = parseArgs(argv);
   if (args.command === 'check') return await cmdCheck(args.fixture);
@@ -351,7 +374,7 @@ async function main(): Promise<number> {
  * bare flag. These commands take too many optional settings for the strict
  * parser the fixture commands use.
  */
-const BARE = new Set(['--yes', '-y', '--resume', '--dry', '--no-preflight', '--write', '--json']);
+const BARE = new Set(['--yes', '-y', '--resume', '--dry', '--no-preflight', '--write', '--json', '--regardless', '--clean']);
 
 function freeArgs<T extends { dir: string }>(argv: string[], base: T): T {
   const out = { ...base } as Record<string, unknown>;

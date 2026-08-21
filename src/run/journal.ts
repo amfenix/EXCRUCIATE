@@ -41,6 +41,15 @@ export interface JournalEntry {
   status: string;
   /** `kept` or `deleted`. A soft delete never removes the row. */
   state: string;
+  /**
+   * A person's judgement of the result: blank, `keep` or `junk`.
+   *
+   * Separate from `status`, which is how the RUN ended, and from `state`, which
+   * is whether the folder is still there. A run can finish perfectly and still
+   * be junk — the task was wrong, the prompt had a typo — and that is exactly
+   * the case where the number is most dangerous to leave lying around unlabelled.
+   */
+  verdict: string;
   note: string;
 }
 
@@ -65,6 +74,7 @@ const COLUMNS: Array<{ key: keyof JournalEntry; header: string; width: number }>
   { key: 'commit', header: 'commit', width: 12 },
   { key: 'status', header: 'status', width: 9 },
   { key: 'state', header: 'state', width: 9 },
+  { key: 'verdict', header: 'verdict', width: 9 },
   { key: 'note', header: 'note', width: 46 },
 ];
 
@@ -135,6 +145,7 @@ export async function readJournal(out: string): Promise<JournalEntry[]> {
       commit: cell('commit'),
       status: cell('status') === '' ? 'ok' : cell('status'),
       state: cell('state') === '' ? 'kept' : cell('state'),
+      verdict: cell('verdict'),
       note: cell('note'),
     });
   }
@@ -146,15 +157,15 @@ export async function readJournal(out: string): Promise<JournalEntry[]> {
  *
  * Replacing matters for `--resume`: it writes into the folder it is finishing,
  * and two journal rows for one directory would make every later count double.
- * The note and state of the earlier row are kept — they are a person's, and a
- * resume is not new information about either.
+ * The note, state and verdict of the earlier row are kept — they are a person's
+ * judgement, and a resume is not new information about any of them.
  */
 export async function record(out: string, entry: JournalEntry): Promise<void> {
   const entries = await readJournal(out);
   const existing = entries.findIndex((e) => e.run === entry.run);
   if (existing >= 0) {
     const was = entries[existing]!;
-    entries[existing] = { ...entry, note: was.note, state: was.state };
+    entries[existing] = { ...entry, note: was.note, state: was.state, verdict: was.verdict };
   } else {
     entries.push(entry);
   }

@@ -254,6 +254,26 @@ added together?** — the day the handler grew a day-3 settlement window, every
 earlier Direct Debit number stopped being comparable with every later one, and
 nothing in the folder said so.
 
+### Combined results
+
+`excruciate combine` writes `results/combined/<name>-<timestamp>/`, a real run
+folder made of several others, plus a `sources.json` saying which and what each
+was measured against. It gets its own journal row, with `status` of `combined`.
+
+Combined results live in their own subfolder so they never sort among the runs
+they are made of — reading a total as though it were a sample is the one mistake
+this whole arrangement exists to prevent.
+
+### Removing a run
+
+`excruciate runs <dir> --clean` says what could go. **A run that produced a
+result is never deletable**: it cost real money and it is the evidence behind a
+number someone has already quoted. Only three things make a folder removable —
+nothing was scored, a person marked it `junk`, or git already has it.
+
+Deleting is soft. The folder goes; the journal row stays, marked `deleted`, so
+its absence is still explainable a year later and `combine` refuses to use it.
+
 ## Saying it again later
 
 ```sh

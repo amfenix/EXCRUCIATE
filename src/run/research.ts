@@ -162,6 +162,7 @@ export async function runResearch(loaded: LoadedResearch, opts: ResearchOptions 
       commit: print.dirty ? `${print.commit}*` : print.commit,
       status: stopped !== null ? 'stopped' : failed.length > 0 ? 'failed' : 'ok',
       state: 'kept',
+      verdict: '',
       note: '',
     });
   } catch (e) {

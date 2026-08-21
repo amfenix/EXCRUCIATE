@@ -129,6 +129,64 @@ Point it at a run folder, or at a research to get its latest run.
 
 ---
 
+### `combine <dir>`
+
+Add several runs together into one result.
+
+| flag | |
+|---|---|
+| `--name <n>` | names the result: `results/combined/<n>-<timestamp>/` |
+| `--runs <a,b>` | the run folders to add |
+| `--regardless` | add them even though their fingerprints disagree |
+
+A question is rarely answered in one sitting. Direct Debit gets ten episodes on
+Tuesday, Faster Payments twelve on Thursday, and the reading everyone wants is of
+the twenty-two. The output is a **real run folder** — episodes, logs,
+`results.xlsx` — so `report` and every query in the docs work on it unchanged.
+
+Two refusals make it trustworthy:
+
+- **Intersection.** Two runs holding the same episode cannot be added: either the
+  sample is counted twice or one artefact silently overwrites the other, and the
+  total looks right both ways.
+- **The fingerprint.** Runs measured against a different manifest or a different
+  schema are not addable, whatever the ids say. `--regardless` allows it when
+  comparing two worlds *is* the question — and the folder and journal both record
+  that it was said.
+
+Differing commits are recorded rather than refused. The commit changes on nearly
+every working day, so refusing on it would make combining useless in practice.
+
+### `runs <dir>`
+
+The journal, and the two things no machine can recover about a run.
+
+| flag | |
+|---|---|
+| *(none)* | list every run, both axes, with its verdict and note |
+| `--mark <run> --as keep\|junk` | a person's judgement of the result |
+| `--note <run> --as '…'` | a sentence, replacing whatever was there |
+| `--clean` | say what could be removed |
+| `--clean --yes` | remove it |
+
+Marking matters more than it sounds. A run can finish perfectly and still be
+**junk** — the task was wrong, the prompt had a typo, the world had no hazard in
+it — and that is exactly the case where a clean-looking number is most dangerous
+to leave lying around unlabelled.
+
+**A run that produced a result is never deletable.** Three things make a folder
+removable, and only three:
+
+| | |
+|---|---|
+| `nothing scored` | no episode was graded, so there is no evidence to lose |
+| `junk` | a person said so — `keep` vetoes even an unscored run |
+| `tracked` | git has it, so deleting from disk loses nothing |
+
+`--clean` prints both sides: what would go, and what is being kept and why. The
+journal row is never removed — a soft delete marks it `deleted`, so the folder's
+absence stays explainable and `combine` refuses to use it.
+
 ## Keys
 
 ```sh
