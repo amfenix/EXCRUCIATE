@@ -112,6 +112,41 @@ systemic failure does, and both the run and the report say so.
 `--resume` is for the nine-hundred-episode matrix that died at seven hundred.
 The artefact is the receipt, so its presence is what makes an episode a skip.
 
+#### After a run
+
+A run that ends with a directory of `.sqlite` files is not finished — somebody
+still has to build the dataset — and *somebody still has to* is exactly the shape
+of a step that gets skipped on the day it matters. So the research declares it:
+
+```yaml
+after:
+  - bun scripts/extract.ts "{run}"
+  - bun scripts/readable.ts "{run}"
+produces:
+  - data.json
+  - findings.xlsx
+```
+
+`after` runs in the research directory with `{run}` substituted for the run
+folder — the folder *this* run wrote, never "the latest", which under `--resume`
+or two runs a minute apart is the wrong one. The first non-zero exit stops the
+rest, because later steps consume what earlier ones write.
+
+`produces` is checked once they have finished. **What a script can make, the
+runner insists on.** A run that could not be turned into a dataset is journalled
+as `unreported` rather than `ok`, and `run` leaves with a non-zero exit code.
+
+The **report** is deliberately not a candidate for `produces`: prose is written
+by a model, not by a hook. `runs <dir>` says which scored folders have no
+`report.html` instead — pressure, rather than a gate nothing can pass.
+
+Commands go through Bun's own shell rather than the platform's, so a research
+behaves the same on every machine. If a hook writes `report.spend.json`
+(`{"usd": 1.25}`) into the run folder, that is journalled **apart from** the
+run's own spend: what the experiment cost to measure and what it cost to write
+up are different questions, and one total lets an expensive analysis hide inside
+a cheap run.
+
 A run stops early if three episodes in a row fail the same way — a bad key or a
 handler that cannot boot should cost three episodes, not nine hundred. The run
 folder says `STOPPED EARLY` and the report says so too.

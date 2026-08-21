@@ -141,20 +141,31 @@ function list(entries: JournalEntry[], out: string): void {
   const where = relative(process.cwd(), out).replace(/\\/g, '/') || out;
   console.log(`${entries.length} run${entries.length === 1 ? '' : 's'} in ${where}\n`);
   for (const e of entries) {
-    console.log(line(e));
+    console.log(line(e, reported(out, e)));
     if (e.note !== '') console.log(`      ${e.note}`);
   }
 
   const junk = entries.filter((e) => e.verdict === 'junk').length;
   if (junk > 0) console.log(`\n${junk} marked junk — \`runs <dir> --clean\` says what could go`);
+
+  // Pressure rather than a gate. Prose is written by a model, so nothing can
+  // enforce it — but a folder with numbers in it and no report is a folder
+  // whose numbers will end up being quoted from somewhere else.
+  const unwritten = entries.filter((e) => e.state === 'kept' && e.scored > 0 && !reported(out, e));
+  if (unwritten.length > 0) {
+    console.log(`\n${unwritten.length} scored run${unwritten.length === 1 ? ' has' : 's have'} no report.html`);
+  }
 }
 
-function line(e: JournalEntry): string {
+const reported = (out: string, e: JournalEntry): boolean => existsSync(resolve(out, e.run, 'report.html'));
+
+function line(e: JournalEntry, written: boolean): string {
   // Both axes, always, and as counts over the scored episodes. A harm rate
   // printed alone is how a run of agents that did nothing reads as clean.
   const scored = e.scored > 0 ? `harm ${e.harmed}/${e.scored}  done ${e.completed}/${e.scored}` : 'nothing scored';
   const flags = [
     e.status === 'ok' ? '' : e.status.toUpperCase(),
+    written ? '' : 'no report',
     e.verdict,
     e.state === 'kept' ? '' : e.state,
   ].filter((f) => f !== '');
@@ -162,6 +173,7 @@ function line(e: JournalEntry): string {
   return (
     `  ${e.run.padEnd(44).slice(0, 44)} ${e.experiment.padEnd(16).slice(0, 16)} ` +
     `${String(e.episodes).padStart(4)} ep  ${scored.padEnd(26)} ${formatUsd(e.usd).padStart(9)}` +
+    (e.reportUsd === null ? '' : ` +${formatUsd(e.reportUsd)}`) +
     (flags.length > 0 ? `  [${flags.join(' ')}]` : '')
   );
 }

@@ -39,6 +39,8 @@ export function parseResearch(source: string, p: Problems, where = 'research.yam
     // Absent means no ceiling. A budget of 0 is a real instruction — "run
     // nothing" — so blankness is what turns it off, not the value zero.
     ...budgetOf(p, where, doc['budget']),
+    after: lines(p, where, 'after', doc['after']),
+    produces: lines(p, where, 'produces', doc['produces']),
   };
 
   for (const key of Object.keys(doc)) {
@@ -58,6 +60,8 @@ const KNOWN = new Set([
   'concurrency',
   'preflight',
   'budget',
+  'after',
+  'produces',
 ]);
 
 const fallback = (): Research => ({
@@ -69,7 +73,29 @@ const fallback = (): Research => ({
   out: 'results',
   concurrency: 1,
   preflight: true,
+  after: [],
+  produces: [],
 });
+
+/** A list of strings, refusing anything that is not one — a typo here is silent. */
+function lines(p: Problems, where: string, key: string, value: unknown): string[] {
+  if (isBlank(value)) return [];
+  if (!Array.isArray(value)) {
+    p.add(where, `${key} must be a list, got ${typeof value}`);
+    return [];
+  }
+
+  const out: string[] = [];
+  for (const [i, item] of value.entries()) {
+    const line = text(item);
+    if (line === '') {
+      p.add(where, `${key}[${i}] is empty`);
+      continue;
+    }
+    out.push(line);
+  }
+  return out;
+}
 
 /**
  * A USD amount. Accepts `5`, `5.00`, `$5` — a budget written with the currency

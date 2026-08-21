@@ -11,6 +11,7 @@ import { runResearch } from '../run/research.ts';
 import { print } from './report.ts';
 import { formatUsd } from '../cost.ts';
 import type { LoadedResearch } from '../research/load.ts';
+import type { AfterResult } from '../run/after.ts';
 import type { Projection } from '../run/project.ts';
 import type { ResearchOptions, ResearchRun } from '../run/research.ts';
 
@@ -36,6 +37,7 @@ export async function cmdRun(args: RunArgs): Promise<number> {
     resume: args.resume,
     dry: args.dry,
     preflight: args.preflight,
+    onAfter: (command) => console.log(`\n> ${command}`),
     onProgress: (done, total, job, outcome) => {
       const width = String(total).length;
       const head = `[${String(done).padStart(width)}/${total}] ${job.id.padEnd(34).slice(0, 34)}`;
@@ -73,7 +75,9 @@ export async function cmdRun(args: RunArgs): Promise<number> {
   }
 
   summarise(run, loaded.dir);
-  return run.failed.length > 0 || run.stopped !== null ? 1 : 0;
+  // An unanalysed run is not a clean run — it is one nobody can read — so it
+  // leaves with a non-zero code exactly as a failed episode does.
+  return run.failed.length > 0 || run.stopped !== null || run.after?.problem != null ? 1 : 0;
 }
 
 const word = (v: boolean | null): string => (v === null ? '—' : v ? 'yes' : 'no');
@@ -138,6 +142,7 @@ function summarise(run: ResearchRun, from: string): void {
     console.log(`budget   ${formatUsd(run.spend.usd)} of ${formatUsd(run.budget)}\n`);
   }
 
+  analysis(run.after);
   print(run.dir, run.rows, episodes);
 
   if (run.failed.length > 0) {
@@ -146,4 +151,17 @@ function summarise(run: ResearchRun, from: string): void {
   }
 
   console.log(`\n${relative(from, resolve(run.dir, 'results.xlsx')).replace(/\\/g, '/')}`);
+}
+
+/** What the research's `after` hooks did, when it declared any. */
+function analysis(after: AfterResult | undefined): void {
+  if (after === undefined) return;
+
+  for (const step of after.steps) {
+    const verdict = step.code === 0 ? 'ok' : `EXIT ${step.code}`;
+    console.log(`  ${verdict.padEnd(8)} ${Math.round(step.ms / 1000)}s  ${step.command}`);
+  }
+  // A run nobody can read must never be printed as a run that finished clean.
+  if (after.problem !== null) console.log(`\nNOT ANALYSED — ${after.problem}`);
+  console.log('');
 }

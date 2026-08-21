@@ -37,6 +37,23 @@ export interface Research {
    * artefact, which is the worst of both outcomes.
    */
   budget?: number;
+  /**
+   * Commands to run once the episodes are in, with `{run}` substituted for the
+   * run folder. They run in the research directory, in order, and the first
+   * non-zero exit stops the rest.
+   *
+   * A run that ends with a directory of `.sqlite` files is not finished, and
+   * "somebody still has to extract the dataset" is exactly the shape of a step
+   * that gets skipped on the day it matters.
+   */
+  after: string[];
+  /**
+   * Files that must exist in the run folder once `after` has run.
+   *
+   * What a script can make, the runner insists on. The REPORT is deliberately
+   * not a candidate — prose is written by a model, not by a hook.
+   */
+  produces: string[];
 }
 
 /** One row of the sheet, parsed. Every cell arrives as a string. */

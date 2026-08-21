@@ -22,6 +22,8 @@ import { NO_SPEND, addSpend, formatUsd } from '../cost.ts';
 import { project } from './project.ts';
 import { fingerprint } from './fingerprint.ts';
 import { record, runName, tally } from './journal.ts';
+import { reportSpend, runAfter } from './after.ts';
+import type { AfterResult } from './after.ts';
 import type { Projection } from './project.ts';
 import type { Spend } from '../cost.ts';
 import type { ProviderName } from '@combycode/llm-sdk';
@@ -56,6 +58,8 @@ export interface ResearchOptions {
    */
   keys?: Partial<Record<string, string>>;
   onProgress?: (done: number, total: number, job: Job, outcome: { error?: Error; result?: EpisodeResult }) => void;
+  /** Called as each `after` command starts, so a long analysis is not silent. */
+  onAfter?: (command: string) => void;
 }
 
 export interface Job {
@@ -90,6 +94,8 @@ export interface ResearchRun {
   projection?: Projection;
   /** The research's ceiling, when it set one. */
   budget?: number;
+  /** What the research's `after` hooks did, when it declared any. */
+  after?: AfterResult;
 }
 
 export async function runResearch(loaded: LoadedResearch, opts: ResearchOptions = {}): Promise<ResearchRun> {
@@ -141,6 +147,9 @@ export async function runResearch(loaded: LoadedResearch, opts: ResearchOptions 
   await writeReport(resolve(dir, 'results.xlsx'), rows, allFailed);
 
   const spend = book.spent();
+  // The analysis, before the journal — so a run that could not be turned into a
+  // dataset says so in the row that describes it, rather than reading as clean.
+  const after = await afterFor(loaded, dir, opts);
   const print = await fingerprint(chosen, loaded.dir);
   // The journal is written last and never allowed to take the run down with it:
   // a locked spreadsheet — Excel holds the file open — must not turn a finished
@@ -157,13 +166,14 @@ export async function runResearch(loaded: LoadedResearch, opts: ResearchOptions 
       failed: failed.length,
       ...tally(rows),
       usd: spend.usd,
+      reportUsd: await reportSpend(dir),
       manifest: print.manifest,
       schema: print.schema,
       commit: print.dirty ? `${print.commit}*` : print.commit,
-      status: stopped !== null ? 'stopped' : failed.length > 0 ? 'failed' : 'ok',
+      status: statusOf(stopped, failed.length, after),
       state: 'kept',
       verdict: '',
-      note: '',
+      note: after?.problem ?? '',
     });
   } catch (e) {
     console.error(`warning: the run finished but the journal was not written: ${(e as Error).message}`);
@@ -180,6 +190,7 @@ export async function runResearch(loaded: LoadedResearch, opts: ResearchOptions 
     stopped,
     ms: Date.now() - began,
     spend,
+    ...(after !== undefined ? { after } : {}),
     ...(loaded.meta.budget !== undefined ? { budget: loaded.meta.budget } : {}),
   };
 }
@@ -233,6 +244,32 @@ function bookkeeping(
       return stopOnRepeatedFailure(3)(outcomes.filter((o) => !(o.error instanceof SkippedError)));
     },
   };
+}
+
+/**
+ * `unreported` is its own status, above `ok` and below the run's own failures.
+ *
+ * A run whose episodes all landed but whose dataset was never built is not a
+ * clean run — it is one nobody can read — and calling it `ok` is how it comes to
+ * be quoted from a chat message six weeks later.
+ */
+function statusOf(stopped: string | null, failed: number, after: AfterResult | undefined): string {
+  if (stopped !== null) return 'stopped';
+  if (failed > 0) return 'failed';
+  return after?.problem == null ? 'ok' : 'unreported';
+}
+
+async function afterFor(
+  loaded: LoadedResearch,
+  dir: string,
+  opts: ResearchOptions
+): Promise<AfterResult | undefined> {
+  const { after, produces } = loaded.meta;
+  if (after.length === 0 && produces.length === 0) return undefined;
+
+  return await runAfter(loaded.dir, dir, after, produces, (command) => {
+    opts.onAfter?.(command);
+  });
 }
 
 function pick(loaded: LoadedResearch, opts: ResearchOptions): LoadedEpisode[] {

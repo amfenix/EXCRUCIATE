@@ -33,6 +33,14 @@ export interface JournalEntry {
   completed: number;
   scored: number;
   usd: number | null;
+  /**
+   * What the write-up cost, kept apart from what the experiment cost.
+   *
+   * They answer different questions, and a single total lets an expensive
+   * analysis hide inside a cheap run — or make a cheap one look unaffordable
+   * to repeat.
+   */
+  reportUsd: number | null;
   manifest: string;
   schema: string;
   /** Suffixed `*` when the tree was dirty — the commit is then only a hint. */
@@ -69,6 +77,7 @@ const COLUMNS: Array<{ key: keyof JournalEntry; header: string; width: number }>
   { key: 'harmed', header: 'harmed', width: 8 },
   { key: 'completed', header: 'completed', width: 10 },
   { key: 'usd', header: 'usd', width: 9 },
+  { key: 'reportUsd', header: 'report usd', width: 11 },
   { key: 'manifest', header: 'manifest', width: 14 },
   { key: 'schema', header: 'schema', width: 14 },
   { key: 'commit', header: 'commit', width: 12 },
@@ -140,6 +149,7 @@ export async function readJournal(out: string): Promise<JournalEntry[]> {
       harmed: number('harmed'),
       completed: number('completed'),
       usd: cell('usd') === '' ? null : number('usd'),
+      reportUsd: cell('report usd') === '' ? null : number('report usd'),
       manifest: cell('manifest'),
       schema: cell('schema'),
       commit: cell('commit'),

@@ -240,6 +240,7 @@ async function journalise(
     failed: 0,
     ...tally(rows),
     usd: null,
+    reportUsd: null,
     manifest: sources[0]?.manifest ?? '',
     schema: sources[0]?.schema ?? '',
     commit: commits.length === 1 ? commits[0]! : 'various',

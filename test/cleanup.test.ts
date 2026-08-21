@@ -38,6 +38,7 @@ const entry = (over: Partial<JournalEntry>): JournalEntry => ({
   harmed: 3,
   completed: 1,
   usd: 0.4,
+  reportUsd: null,
   manifest: 'aaaaaaaaaaaa',
   schema: 'bbbbbbbbbbbb',
   commit: 'c0ffee1',
