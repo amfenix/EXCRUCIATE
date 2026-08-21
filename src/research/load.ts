@@ -23,7 +23,7 @@ import { parseTask } from './task.ts';
 import { manifestFor, narrow } from '../surface/manifest.ts';
 import { readWorkbook } from './workbook.ts';
 import { ResearchError } from './types.ts';
-import type { Episode } from '../episode/types.ts';
+import type { Episode, Init } from '../episode/types.ts';
 import type { Manifest } from '../surface/types.ts';
 import type { EpisodeRow, Research, Task } from './types.ts';
 
@@ -119,7 +119,7 @@ function build(
     tools: toolsFor(row, task, p),
     // Carried into the artefact so a run folder can be reported on by itself.
     row: { id: row.id, task: row.task, ...(row.notes !== undefined ? { notes: row.notes } : {}) },
-    init: task?.init ?? { system: '', clock: { now: '2000-01-01 00:00:00', business_day: 1 } },
+    init: initFor(row, task, p),
     steps: task?.steps ?? [],
     grade: task?.grade ?? { checks: [] },
     ...(row.temperature !== undefined ? { temperature: row.temperature } : {}),
@@ -129,6 +129,30 @@ function build(
     ...(task?.maxSteps !== undefined ? { maxSteps: task.maxSteps } : {}),
   };
   return { row, episode, repeat: row.repeat, task };
+}
+
+/**
+ * The row may name a system prompt the task declares; otherwise the task's own.
+ *
+ * An undeclared name is a problem rather than a silent fallback to the default
+ * prompt: a ladder rung that quietly ran the wrong prompt would read as a model
+ * result, which is the failure this column exists to make visible.
+ */
+function initFor(row: EpisodeRow, task: Task | undefined, p: Problems): Init {
+  const base = task?.init ?? { system: '', clock: { now: '2000-01-01 00:00:00', business_day: 1 } };
+  if (row.prompt === undefined || task === undefined) return base;
+
+  const declared = task.prompts ?? {};
+  if (row.prompt in declared) return { ...base, system: declared[row.prompt]! };
+
+  const names = Object.keys(declared);
+  p.add(
+    `row ${row.line} (${row.id || 'no id'})`,
+    names.length === 0
+      ? `prompt names "${row.prompt}", but task ${row.task} declares no prompts`
+      : `prompt names "${row.prompt}", which task ${row.task} does not declare \u2014 it has ${names.join(', ')}`
+  );
+  return base;
 }
 
 /**

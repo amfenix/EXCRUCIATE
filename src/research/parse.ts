@@ -103,6 +103,27 @@ export function thinking(p: Problems, where: string, value: unknown): ThinkingCo
 }
 
 /**
+ * Which named system prompt from the task file the row runs under.
+ *
+ * The cell holds ONE NAME. The prompts live in the task file under `prompts:`,
+ * for the same reason tool lists do: an operator prompt runs to two pages, and
+ * the same two pages pasted across sixty rows is how two rows end up quietly
+ * different from each other.
+ *
+ * Blank means the task's own `init.system`, so a workbook without the column
+ * behaves as it always did.
+ */
+export function promptName(p: Problems, where: string, value: unknown): string | undefined {
+  if (isBlank(value)) return undefined;
+  const v = text(value);
+  if (v.includes(',')) {
+    p.add(where, `prompt names one prompt declared in the task file, not a list \u2014 got "${v}"`);
+    return undefined;
+  }
+  return v;
+}
+
+/**
  * Which named tool list from the task file the model is shown.
  *
  * The cell holds ONE NAME, not a list of operations. A fixture with forty-four

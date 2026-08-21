@@ -24,6 +24,7 @@ export const COLUMNS = [
   'parallelToolCalls',
   'faults',
   'tools',
+  'prompt',
   'repeat',
   'fixture',
   'notes',

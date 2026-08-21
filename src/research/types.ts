@@ -57,6 +57,11 @@ export interface EpisodeRow {
    * — a blank cell, or `all` — is every operation the fixture has.
    */
   toolset?: string;
+  /**
+   * From the `prompt` column: the name of a system prompt the task declares.
+   * Absent means the task's own `init.system`.
+   */
+  prompt?: string;
   repeat: number;
   parallelToolCalls?: boolean;
   fixture?: string;
@@ -86,6 +91,12 @@ export interface Task {
    * cannot disagree about what `minimal` contained.
    */
   tools?: Record<string, string[]>;
+  /**
+   * Named system prompts a row may run under, `name: text`. `@path` works here
+   * as it does anywhere else, which is how a two-page operator prompt stays in
+   * a file of its own rather than inside the task.
+   */
+  prompts?: Record<string, string>;
   init: Init;
   steps: Step[];
   grade: Grade;

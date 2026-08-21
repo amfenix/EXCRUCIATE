@@ -9,7 +9,19 @@
  */
 import ExcelJS from 'exceljs';
 import { basename } from 'node:path';
-import { bool, decimal, faults, integer, isBlank, oneOf, required, text, thinking, toolset } from './parse.ts';
+import {
+  bool,
+  decimal,
+  faults,
+  integer,
+  isBlank,
+  oneOf,
+  promptName,
+  required,
+  text,
+  thinking,
+  toolset,
+} from './parse.ts';
 import { KNOWN_COLUMNS, REQUIRED_COLUMNS, normalise } from './columns.ts';
 import type { Problems } from './parse.ts';
 import type { EpisodeRow } from './types.ts';
@@ -113,6 +125,7 @@ const rowOf = (cell: Cell, p: Problems, where: string, line: number, id: string)
     : { surface: oneOf(p, where, 'surface', cell('surface'), ['tools', 'api', 'search'] as const, 'tools') }),
   faults: faults(p, where, cell('faults')),
   ...(isBlank(cell('tools')) ? {} : { toolset: toolset(p, where, cell('tools'))! }),
+  ...(isBlank(cell('prompt')) ? {} : { prompt: promptName(p, where, cell('prompt'))! }),
   repeat: integer(p, where, 'repeat', cell('repeat'), 1),
   ...(isBlank(cell('temperature')) ? {} : { temperature: decimal(p, where, 'temperature', cell('temperature'))! }),
   ...(isBlank(cell('thinking')) ? {} : { thinking: thinking(p, where, cell('thinking'))! }),

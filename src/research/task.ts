@@ -40,10 +40,11 @@ export function parseTask(source: string, where: string, p: Problems): Task {
     ...(isBlank(doc['maxSteps']) ? {} : { maxSteps: integer(p, where, 'maxSteps', doc['maxSteps'], 12) }),
     ...(doc['surfaces'] === undefined ? {} : { surfaces: parseSurfaces(doc['surfaces'], where, p) }),
     ...(doc['tools'] === undefined ? {} : { tools: parseToolsets(doc['tools'], where, p) }),
+    ...(doc['prompts'] === undefined ? {} : { prompts: parsePrompts(doc['prompts'], where, p) }),
   };
 
   for (const key of Object.keys(doc)) {
-    if (!['name', 'maxSteps', 'surfaces', 'tools', 'init', 'steps', 'grade'].includes(key)) {
+    if (!['name', 'maxSteps', 'surfaces', 'tools', 'prompts', 'init', 'steps', 'grade'].includes(key)) {
       p.add(where, `unknown key "${key}"`);
     }
   }
@@ -53,6 +54,25 @@ export function parseTask(source: string, where: string, p: Problems): Task {
 function parseSurfaces(raw: unknown, where: string, p: Problems): SurfaceKind[] {
   const list = Array.isArray(raw) ? raw : [raw];
   return list.map((entry) => oneOf(p, where, 'surfaces', entry, SURFACES, 'tools'));
+}
+
+/**
+ * Named system prompts, which a row asks for by name.
+ *
+ * An empty prompt is allowed and meaningful: the floor condition of a prompt
+ * ladder is a task with no domain framing at all.
+ */
+function parsePrompts(raw: unknown, where: string, p: Problems): Record<string, string> {
+  const at = `${where} prompts`;
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    p.add(at, 'must be a mapping of name to prompt text, e.g. `P1: "@docs/operator.md"`');
+    return {};
+  }
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(raw as Record<string, unknown>)) {
+    out[name] = text(value);
+  }
+  return out;
 }
 
 /**
