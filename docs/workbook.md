@@ -29,6 +29,7 @@ otherwise silently ignored.
 | `parallelToolCalls` | no | `yes`/`no` | provider default | whether the model may emit several tool calls per turn |
 | `faults` | no | `none`, `all`, or names | `none` | which declared faults are live |
 | `tools` | no | a list name from the task | blank = everything | how much of the API the model sees |
+| `prompt` | no | a prompt name from the task | blank = the task's own | which system prompt the row runs under |
 | `repeat` | no | integer | `1` | how many times to run this row |
 | `fixture` | no | path | research default | override the world for one row |
 | `notes` | no | text | — | yours; carried into `results.xlsx` |
@@ -55,6 +56,12 @@ different. **Blank means the whole API, and it is the only way to say so** —
 there is no `all` keyword, because two spellings of one thing are two things to
 keep in step. A name the task never declared is a load error, since a surface
 wider than the author intended reads as a model result.
+
+**`prompt` names a system prompt the task declared**, the same way `tools` and
+`faults` do — see [task files](tasks.md#system-prompts). Blank runs the task's own
+`init.system`. This is what makes a prompt ladder a set of ROWS rather than a set
+of near-identical task files: four copies of a task drift apart the moment one is
+edited, and then the ladder measures the drift.
 
 **Always keep a control.** `faults: none` for the same combination is what every
 fault rate is read against. `excruciate matrix` adds it for you and you should

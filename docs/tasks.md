@@ -111,6 +111,28 @@ must not read as a clean run.
 Only one fault fires per step at most: a batch fails at its earliest failing
 statement, so pointing at more than one within a step would be a fiction.
 
+## System prompts
+
+A row may run the task under a different system prompt. Declare them by name:
+
+```yaml
+prompts:
+  P0: ''                            # no domain framing at all
+  P1: '@docs/operator.md'           # what a careful team ships
+  P3: '@docs/operator-warned.md'    # the same, plus this trap named
+```
+
+`@path` works as it does anywhere else, so a two-page operator prompt lives in a
+file and the task stays readable.
+
+A blank cell runs the task's own `init.system`. **An empty prompt is a rung, not
+a missing value** — the floor of a prompt ladder is a task with no framing, and
+that has to be sayable. A name the task never declared is refused at load.
+
+Everything else about the episode is untouched: same steps, same clock, same
+world. Only the framing changes, which is what makes the comparison worth
+drawing.
+
 ## Tool lists
 
 How much of the API the model can see is a **variable under study**, not a
