@@ -27,6 +27,8 @@ import { cmdMatrix } from './cli/matrix.ts';
 import { cmdRun } from './cli/run.ts';
 import { cmdReport } from './cli/report.ts';
 import { loadResearch } from './research/load.ts';
+import { verifyPlans } from './episode/plans.ts';
+import type { PlanProblem } from './episode/plans.ts';
 import type { ModelsArgs } from './cli/models.ts';
 import type { InitArgs } from './cli/init.ts';
 import type { MatrixArgs } from './cli/matrix.ts';
@@ -404,6 +406,30 @@ async function cmdCheck(dir: string): Promise<number> {
           `${e.episode.memory}  faults=${JSON.stringify(e.episode.faults)}  x${e.repeat}`
       );
     }
+    // The forecast paths, once per distinct task and surface. Running them per
+    // ROW would walk the same path sixty times for sixty models; the path does
+    // not depend on which model is about to take it.
+    const seen = new Set<string>();
+    const problems: PlanProblem[] = [];
+    for (const e of research.episodes) {
+      const key = `${e.row.task}|${JSON.stringify(e.episode.tools ?? 'all')}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      problems.push(...(await verifyPlans(e.episode)));
+    }
+
+    if (problems.length > 0) {
+      console.error(`\n${problems.length} forecast path${problems.length === 1 ? '' : 's'} did not hold:`);
+      for (const p of problems) console.error(`  ${p.episode} [${p.path}] ${p.message}`);
+      console.error(
+        '\nEach of these is a hole in the task, not a finding: a path an agent could\n' +
+          'not walk, a check that can never pass, or a world with no hazard in it.'
+      );
+      return 1;
+    }
+
+    const walked = seen.size;
+    if (walked > 0) console.log(`    forecast paths walked for ${walked} task/surface combination${walked === 1 ? '' : 's'}`);
     return 0;
   } catch (e) {
     console.error((e as Error).message);

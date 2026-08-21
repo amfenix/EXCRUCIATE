@@ -15,7 +15,7 @@ import { call, close, init, verify } from '../runner.ts';
 import { FixtureError } from '../errors.ts';
 import { validateStatic } from '../preflight.ts';
 import { agentFor, dispatchFor } from '../agent.ts';
-import { openSurface } from '../surface/index.ts';
+import { openSurface, toolName } from '../surface/index.ts';
 import { manifestFor, narrow } from '../surface/manifest.ts';
 import { withFaults } from '../fault/dispatch.ts';
 import { advance } from './clock.ts';
@@ -172,6 +172,11 @@ async function runSteps(
     // `session` keeps one loop for the whole episode, so history accumulates.
     // `fresh` builds a new one per step: nothing about the agent's identity
     // survives the call, which is the condition being probed.
+    if (spec.scripted !== undefined) {
+      steps.push(await runPlan(step, index, clock, surface, faulty, spec.scripted));
+      continue;
+    }
+
     agent ??= agentFor(surface, agentSpec(spec, () => system));
     steps.push(await runSay(step, index, clock, surface, agent, faulty, watch, spec.model));
 
@@ -191,6 +196,67 @@ const nextSystem = (current: string, step: Say): string => {
   if (step.system === undefined) return current;
   return 'set' in step.system ? step.system.set : `${current}\n\n${step.system.add}`;
 };
+
+/**
+ * Walk a forecast path, using the surface the agent would have been given.
+ *
+ * Through the TOOLS, not the op table: a path that only works because it reached
+ * past the surface proves nothing about what an agent could have done. A step
+ * with no forecast declares nothing and does nothing, which keeps the mechanism
+ * optional for tasks that predate it.
+ */
+async function runPlan(
+  step: Say,
+  index: number,
+  clock: Clock,
+  surface: Surface,
+  faulty: Faulty,
+  which: 'pass' | 'fail'
+): Promise<StepRecord> {
+  const fromCall = surface.calls.length;
+  const fromFault = faulty.fired.length;
+  const plan = step.expect?.[which] ?? [];
+  const problems: string[] = [];
+
+  for (const call of plan) {
+    const wanted = toolName(call.op);
+    const tool = surface.tools.find((t) => 'name' in t.definition && t.definition.name === wanted);
+    if (tool === undefined) {
+      // The tool list must hold everything the agent needs; if it does not, the
+      // row is unrunnable and that is a fault in the task, not in the model.
+      problems.push(`${call.op} is not on this row's surface`);
+      continue;
+    }
+    try {
+      await tool.execute(call.input as never, {} as never);
+    } catch (e) {
+      problems.push(`${call.op} threw: ${(e as Error).message}`);
+    }
+  }
+
+  // A REFUSAL IS NOT AN EXCEPTION. A 404 comes back as a response, so a walk
+  // that watched only for thrown errors would miss the case this exists to
+  // catch: an operation the agent cannot reach, scoring a clean zero.
+  const made = surface.calls.slice(fromCall);
+  for (const call of made) {
+    // A null status is a call that threw; the catch above already recorded it.
+    if (call.status !== null && call.status !== undefined && call.status >= 400) {
+      problems.push(`${call.op} answered ${call.status}`);
+    }
+  }
+
+  return {
+    kind: 'say' as const,
+    index,
+    clock,
+    say: step.say,
+    ...note(step),
+    calls: made,
+    faults: faulty.fired.slice(fromFault),
+    answer: `[forecast: ${which}]`,
+    ...(problems.length > 0 ? { error: problems.join('; ') } : {}),
+  } as StepRecord;
+}
 
 async function runSay(
   step: Say,

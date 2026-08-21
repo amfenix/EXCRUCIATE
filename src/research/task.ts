@@ -9,7 +9,7 @@
 import { integer, isBlank, oneOf, required, stamp, text } from './parse.ts';
 import type { Problems } from './parse.ts';
 import type { Fault, FaultKind, Pick } from '../fault/types.ts';
-import type { Axis, Check, Init, Say, Step } from '../episode/types.ts';
+import type { Axis, Check, Expect, Init, PlanCall, Say, Step } from '../episode/types.ts';
 import type { SurfaceKind } from '../surface/types.ts';
 import type { Statement } from '../types.ts';
 import type { Task } from './types.ts';
@@ -127,6 +127,31 @@ function parseSteps(raw: unknown, where: string, p: Problems): Step[] {
   return raw.map((entry, i) => parseStep(entry, `${where} step ${i + 1}`, p));
 }
 
+/** Everything a step with a message may carry. */
+function parseSay(
+  doc: Record<string, unknown>,
+  timing: Record<string, unknown>,
+  where: string,
+  p: Problems
+): Say {
+  const say: Say = { say: text(doc['say']), ...timing };
+
+  const declared = parseFaults(doc['faults'], where, p);
+  if (declared.length > 0) say.faults = declared;
+
+  const change = parseSystemChange(doc['system'], where, p);
+  if (change !== undefined) say.system = change;
+
+  if (!isBlank(doc['interrupt'])) {
+    say.interrupt = { afterCalls: integer(p, where, 'interrupt', doc['interrupt'], 1) };
+  }
+
+  const expect = parseExpect(doc['expect'], where, p);
+  if (expect !== undefined) say.expect = expect;
+
+  return say;
+}
+
 function parseStep(raw: unknown, where: string, p: Problems): Step {
   if (raw === null || typeof raw !== 'object') {
     p.add(where, 'must be a mapping with either `say` or `do`');
@@ -144,17 +169,7 @@ function parseStep(raw: unknown, where: string, p: Problems): Step {
   if (hasSay && hasDo) p.add(where, 'a step has either `say` or `do`, never both');
   if (!hasSay && !hasDo) p.add(where, 'a step needs `say` (call the model) or `do` (move the world)');
 
-  if (hasSay) {
-    const say: Say = { say: text(doc['say']), ...timing };
-    const declared = parseFaults(doc['faults'], where, p);
-    if (declared.length > 0) say.faults = declared;
-    const change = parseSystemChange(doc['system'], where, p);
-    if (change !== undefined) say.system = change;
-    if (!isBlank(doc['interrupt'])) {
-      say.interrupt = { afterCalls: integer(p, where, 'interrupt', doc['interrupt'], 1) };
-    }
-    return say;
-  }
+  if (hasSay) return parseSay(doc, timing, where, p);
 
   return {
     do: parseDo(doc['do'], where, p),
@@ -215,6 +230,47 @@ function parseStatements(raw: unknown, where: string, p: Problems): Statement[] 
     return {
       sql: required(p, at, 'sql', doc['sql']),
       ...(Array.isArray(params) ? { params: params as unknown[] } : {}),
+    };
+  });
+}
+
+/**
+ * The two paths a step forecasts: what a right agent does, what a wrong one does.
+ *
+ * Both are complete calls with parameters, not operation names, because the
+ * point is to walk the path rather than to name it. Naming would prove the
+ * operation exists; walking proves an agent could have reached it, with the ids
+ * this world actually contains.
+ */
+function parseExpect(raw: unknown, where: string, p: Problems): Expect | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  const at = `${where} expect`;
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    p.add(at, 'must be a mapping with `pass:` and `fail:`');
+    return undefined;
+  }
+  const doc = raw as Record<string, unknown>;
+  const pass = parsePath(doc['pass'], at, 'pass', p);
+  const fail = parsePath(doc['fail'], at, 'fail', p);
+  if (pass.length === 0 && fail.length === 0) return undefined;
+  return { pass, fail };
+}
+
+/** One path: a list of calls, each an operation and what it is called with. */
+function parsePath(raw: unknown, at: string, key: 'pass' | 'fail', p: Problems): PlanCall[] {
+  if (raw === undefined) {
+    p.add(at, `needs a \`${key}:\` path — both are required, or neither`);
+    return [];
+  }
+  if (!Array.isArray(raw)) {
+    p.add(`${at} ${key}`, 'must be a list of `- op:` calls');
+    return [];
+  }
+  return raw.map((entry, i) => {
+    const e = (entry ?? {}) as Record<string, unknown>;
+    return {
+      op: required(p, `${at} ${key}[${i}]`, 'op', e['op']),
+      input: (e['input'] ?? {}) as Record<string, unknown>,
     };
   });
 }

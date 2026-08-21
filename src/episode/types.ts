@@ -42,9 +42,34 @@ export interface StepCommon {
 /** Replace the system prompt outright, or bolt something onto the end of it. */
 export type SystemChange = { set: string } | { add: string };
 
+/** One call of a forecast path: the operation, and what it is called with. */
+export interface PlanCall {
+  op: string;
+  input: Record<string, unknown>;
+}
+
+/**
+ * What a right agent and a wrong agent would DO at this step.
+ *
+ * Not operation names: complete calls with parameters, executed at check time
+ * through the same surface the agent gets, with no model. After `pass` every
+ * check must be satisfied; after `fail` the harm must trip.
+ *
+ * A call that errors in either path is a hole in the task rather than a finding
+ * about anything. A task whose world holds no hazard, a check that can never
+ * pass, an id no agent could name: all three look like a model result and none
+ * of them is one, and all three fail here for free.
+ */
+export interface Expect {
+  pass: PlanCall[];
+  fail: PlanCall[];
+}
+
 export interface Say extends StepCommon {
   /** The message. `@path` loads a file relative to the fixture. */
   say: string;
+  /** The two paths this step forecasts. Walked before anything is spent. */
+  expect?: Expect;
   /**
    * Where a fault MAY be introduced during this step. Declaring it here rather
    * than in a flat list means a fault's scope is the step it belongs to, and the
@@ -104,6 +129,12 @@ export interface Grade {
 export interface Episode {
   id: string;
   fixture: string;
+  /**
+   * Walk a forecast path instead of calling the model. Set only by the checker;
+   * a workbook cannot ask for it, because an episode that scripts its own agent
+   * measures nothing about a model.
+   */
+  scripted?: 'pass' | 'fail';
   /** Ours: where the handler runs. The model never learns which. */
   mode: Mode;
   surface: SurfaceKind;
