@@ -65,12 +65,19 @@ Run the research. With no flags: every enabled row, every repetition.
 
 | flag | |
 |---|---|
+| `--experiment <name>` | run one column of the experiments sheet, at its own counts |
 | `--only <id,…>` | just these rows |
 | `--limit <n>` | stop after n episodes — a cheap smoke of a large matrix |
 | `--concurrency <n>` | override the research's setting |
 | `--resume` | reuse the latest run folder and skip episodes that already have an artefact |
 | `--dry` | plan, preflight and quote the cost; run nothing |
 | `--no-preflight` | skip the provider check |
+
+`--experiment` names a column of the workbook's [experiments sheet](workbook.md#the-experiments-sheet).
+It replaces both the selection and the `repeat` column: the experiment says which
+episodes run and how many times each. The run folder is then named
+`<experiment>-<timestamp>`, and `--resume` picks up that experiment's last folder
+rather than whatever happens to be newest.
 
 **`--limit` and `--only` produce a partial run.** That is what they are for, but
 the results then describe a subset — do not read them as the research.

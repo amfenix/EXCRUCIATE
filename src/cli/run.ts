@@ -10,11 +10,13 @@ import { loadResearch } from '../research/load.ts';
 import { runResearch } from '../run/research.ts';
 import { print } from './report.ts';
 import { formatUsd } from '../cost.ts';
+import type { LoadedResearch } from '../research/load.ts';
 import type { Projection } from '../run/project.ts';
 import type { ResearchOptions, ResearchRun } from '../run/research.ts';
 
 export interface RunArgs {
   dir: string;
+  experiment?: string;
   only?: string;
   concurrency?: string;
   limit?: string;
@@ -27,6 +29,7 @@ export interface RunArgs {
 export async function cmdRun(args: RunArgs): Promise<number> {
   const loaded = await loadResearch(args.dir);
   const opts: ResearchOptions = {
+    ...(args.experiment !== undefined ? { experiment: args.experiment } : {}),
     ...(args.only !== undefined ? { only: args.only.split(',').map((s) => s.trim()) } : {}),
     ...(args.concurrency !== undefined ? { concurrency: Number(args.concurrency) } : {}),
     ...(args.limit !== undefined ? { limit: Number(args.limit) } : {}),
@@ -51,9 +54,13 @@ export async function cmdRun(args: RunArgs): Promise<number> {
     },
   };
 
-  const enabled = loaded.episodes.length;
-  const episodes = loaded.episodes.reduce((n, e) => n + e.repeat, 0);
-  console.log(`${loaded.meta.name}: ${enabled} row${enabled === 1 ? '' : 's'}, ${episodes} episodes\n`);
+  // What this invocation is about, before it starts: an experiment's own counts
+  // replace the `repeat` column, so the sheet's totals would be the wrong ones.
+  const scope =
+    args.experiment === undefined
+      ? scopeOf(loaded.episodes.length, loaded.episodes.reduce((n, e) => n + e.repeat, 0))
+      : experimentScope(loaded, args.experiment);
+  console.log(`${loaded.meta.name}: ${scope}\n`);
 
   const run = await runResearch(loaded, opts);
 
@@ -70,6 +77,17 @@ export async function cmdRun(args: RunArgs): Promise<number> {
 }
 
 const word = (v: boolean | null): string => (v === null ? '—' : v ? 'yes' : 'no');
+
+const scopeOf = (rows: number, episodes: number): string =>
+  `${rows} row${rows === 1 ? '' : 's'}, ${episodes} episode${episodes === 1 ? '' : 's'}`;
+
+/** Named but absent is the runner's complaint, and a better one; stay quiet. */
+function experimentScope(loaded: LoadedResearch, name: string): string {
+  const counts = loaded.experiments.get(name);
+  if (counts === undefined) return `experiment ${name}`;
+  const episodes = [...counts.values()].reduce((n, c) => n + c, 0);
+  return `experiment ${name} — ${scopeOf(counts.size, episodes)}`;
+}
 
 /**
  * What it would cost, with the reasoning shown.

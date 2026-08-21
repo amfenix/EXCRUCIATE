@@ -46,6 +46,16 @@ export type SystemChange = { set: string } | { add: string };
 export interface PlanCall {
   op: string;
   input: Record<string, unknown>;
+  /**
+   * The status this call is expected to answer. Undeclared means "must
+   * succeed"; declared, it is asserted exactly.
+   *
+   * A refusal is sometimes the case itself — Confirmation of Payee answers
+   * WRONG_PARTICIPANT as HTTP 500 — and stating it here pins the quirk the
+   * scenario rests on, so a port that quietly stopped reproducing it fails the
+   * check rather than the model.
+   */
+  status?: number;
 }
 
 /**

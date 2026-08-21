@@ -271,6 +271,7 @@ function parsePath(raw: unknown, at: string, key: 'pass' | 'fail', p: Problems):
     return {
       op: required(p, `${at} ${key}[${i}]`, 'op', e['op']),
       input: (e['input'] ?? {}) as Record<string, unknown>,
+      ...(isBlank(e['status']) ? {} : { status: integer(p, `${at} ${key}[${i}]`, 'status', e['status'], 200, 100) }),
     };
   });
 }

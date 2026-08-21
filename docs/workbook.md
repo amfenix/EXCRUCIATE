@@ -37,6 +37,44 @@ otherwise silently ignored.
 The list lives in `src/research/columns.ts`, and `init`, `matrix` and the reader
 all use it — so a column cannot exist in one and not the others.
 
+## The experiments sheet
+
+A second sheet, named `experiments`, answers a different question. `repeat` says
+how many times a row runs **when the whole sheet runs**, and after a year that is
+nobody's question: by then the workbook holds every episode ever written, and
+what gets asked is of a handful of them — *the two Direct Debit cases, ten times
+each, after the day-3 fix.*
+
+So an experiment is a **column**. Its header is the name, its cells are run
+counts, and a blank cell means that episode is not in it:
+
+| id | smoke | dd-fix | ladder-a1 |
+|---|---|---|---|
+| `fp01-sonnet5-short` | 1 | | 3 |
+| `fp02-sonnet5-short` | 1 | | 3 |
+| `dd01-sonnet5-short` | | 10 | |
+
+`excruciate run <dir> --experiment dd-fix` then runs that column and nothing
+else, ten times, into `results/dd-fix-<timestamp>/`.
+
+`matrix` writes a line here for every episode it adds, so the ids are given and
+you only type counts — a sheet you have to type ids into is one where a typo
+silently drops an episode out of a comparison. Counts already typed in are left
+alone.
+
+Refused at `check` time, before anything is spent:
+
+- an id that names no row — the realistic way this breaks is a renamed episode,
+  and the silent version keeps running one episode lighter
+- an experiment that asks for a **disabled** row
+- a name that could not be a folder — refused rather than sanitised, because a
+  sanitised name is one nobody can find again by searching for what they typed
+- a column with no episodes in it
+
+Naming the episodes **in the sheet** rather than on the command line is what
+makes a run repeatable six months later, and what lets two results be judged
+addable — see [results](results.md#the-journal).
+
 ## Choosing values
 
 **`repeat` is the sample size.** One episode is an anecdote. The interval on a

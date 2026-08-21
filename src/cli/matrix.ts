@@ -24,6 +24,7 @@ import { Problems } from '../research/parse.ts';
 import { ResearchError } from '../research/types.ts';
 import { HEADER } from './init.ts';
 import { normalise } from '../research/columns.ts';
+import { EXPERIMENTS_SHEET, episodesSheetOf } from '../research/workbook.ts';
 import { chooseMany, interactive, line, slug } from './prompt.ts';
 import type { Task } from '../research/types.ts';
 
@@ -272,23 +273,24 @@ async function append(
   repeat: string
 ): Promise<{ added: string[]; kept: number }> {
   const wb = new ExcelJS.Workbook();
-  let sheet: ExcelJS.Worksheet;
+  let sheet: ExcelJS.Worksheet | undefined;
   try {
     await wb.xlsx.readFile(path);
-    sheet = wb.worksheets[0]!;
+    // By NAME. A workbook may now hold an `experiments` sheet too, and taking
+    // the first one would have appended episodes into it the moment someone
+    // dragged that tab to the front.
+    sheet = episodesSheetOf(wb);
   } catch {
+    sheet = undefined;
+  }
+  if (sheet === undefined) {
     sheet = wb.addWorksheet('episodes');
     sheet.addRow(HEADER);
   }
 
   const columns = new Map<string, number>();
   sheet.getRow(1).eachCell((cell, i) => columns.set(normalise(String(cell.text)), i));
-
-  const existing = new Set<string>();
-  for (let line = 2; line <= sheet.rowCount; line++) {
-    const id = String(sheet.getRow(line).getCell(columns.get('id') ?? 1).text).trim();
-    if (id !== '') existing.add(id);
-  }
+  const existing = idsIn(sheet, columns.get('id') ?? 1);
 
   const added: string[] = [];
   for (const cell of cells) {
@@ -310,8 +312,41 @@ async function append(
     row.commit();
   }
 
+  // Every episode gets a line on the experiments sheet, with no counts in it.
+  // A sheet you have to type ids into is a sheet where one typo silently drops
+  // an episode out of a comparison; here the ids are given and the person only
+  // decides how many times each runs.
+  if (added.length > 0) syncExperiments(wb, [...existing]);
+
   if (added.length > 0) await wb.xlsx.writeFile(path);
   return { added, kept: existing.size - added.length };
+}
+
+/** Every id already written in one column of a sheet. */
+function idsIn(sheet: ExcelJS.Worksheet, column: number): Set<string> {
+  const ids = new Set<string>();
+  for (let line = 2; line <= sheet.rowCount; line++) {
+    const id = String(sheet.getRow(line).getCell(column).text).trim();
+    if (id !== '') ids.add(id);
+  }
+  return ids;
+}
+
+/** Add a line for every id the experiments sheet does not already have. */
+function syncExperiments(wb: ExcelJS.Workbook, ids: string[]): void {
+  const sheet = wb.getWorksheet(EXPERIMENTS_SHEET) ?? wb.addWorksheet(EXPERIMENTS_SHEET);
+  if (sheet.rowCount === 0 || String(sheet.getRow(1).getCell(1).text).trim() === '') {
+    sheet.getRow(1).getCell(1).value = 'id';
+    sheet.getRow(1).font = { bold: true };
+    sheet.getColumn(1).width = 46;
+    sheet.views = [{ state: 'frozen', xSplit: 1, ySplit: 1 }];
+  }
+
+  const present = idsIn(sheet, 1);
+  for (const id of ids) {
+    if (present.has(id)) continue;
+    sheet.addRow([id]).commit();
+  }
 }
 
 export const _internal = { idOf, declaredFaults };

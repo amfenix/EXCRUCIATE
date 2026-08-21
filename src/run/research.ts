@@ -20,6 +20,8 @@ import { readRun, recordFailures } from './read.ts';
 import { writeReport } from './report.ts';
 import { NO_SPEND, addSpend, formatUsd } from '../cost.ts';
 import { project } from './project.ts';
+import { fingerprint } from './fingerprint.ts';
+import { record, runName, tally } from './journal.ts';
 import type { Projection } from './project.ts';
 import type { Spend } from '../cost.ts';
 import type { ProviderName } from '@combycode/llm-sdk';
@@ -29,6 +31,15 @@ import type { Outcome } from './pool.ts';
 import type { RowSummary } from './repeat.ts';
 
 export interface ResearchOptions {
+  /**
+   * A column of the workbook's `experiments` sheet: which episodes to run, and
+   * how many times each. It REPLACES the `repeat` column, because the count is
+   * a property of the question being asked, not of the row.
+   *
+   * Omitted runs every enabled row at its own `repeat`, which is what a research
+   * with no experiments sheet has always done.
+   */
+  experiment?: string;
   /** Row ids to run; everything enabled if omitted. */
   only?: string[];
   concurrency?: number;
@@ -58,6 +69,8 @@ export interface Job {
 export interface ResearchRun {
   /** The timestamped folder everything was written into. */
   dir: string;
+  /** The experiment this run answered, when it answered a named one. */
+  experiment?: string;
   /**
    * Every row in the FOLDER, not only the ones this invocation ran — read back
    * off the artefacts. Otherwise resuming a dead run reports the tail alone.
@@ -81,6 +94,7 @@ export interface ResearchRun {
 
 export async function runResearch(loaded: LoadedResearch, opts: ResearchOptions = {}): Promise<ResearchRun> {
   const began = Date.now();
+  const startedAt = new Date().toISOString();
   const chosen = pick(loaded, opts);
   if (chosen.length === 0) throw new Error('nothing to run — no enabled row matched');
 
@@ -105,7 +119,7 @@ export async function runResearch(loaded: LoadedResearch, opts: ResearchOptions 
     };
   }
 
-  const dir = makeRunFolder(loaded, opts.resume === true);
+  const dir = makeRunFolder(loaded, opts.resume === true, opts.experiment);
   // A budget on the research is a ceiling for the whole run; absent = no limit.
   const book = bookkeeping(jobs, opts, loaded.meta.budget);
 
@@ -126,8 +140,37 @@ export async function runResearch(loaded: LoadedResearch, opts: ResearchOptions 
   const allFailed = recordFailures(dir, failed);
   await writeReport(resolve(dir, 'results.xlsx'), rows, allFailed);
 
+  const spend = book.spent();
+  const print = await fingerprint(chosen, loaded.dir);
+  // The journal is written last and never allowed to take the run down with it:
+  // a locked spreadsheet — Excel holds the file open — must not turn a finished
+  // run into a failed one after the money has been spent.
+  try {
+    await record(resolve(loaded.dir, loaded.meta.out), {
+      run: runName(dir),
+      experiment: opts.experiment ?? '',
+      started: startedAt,
+      seconds: Math.round((Date.now() - began) / 1000),
+      episodes: jobs.length,
+      ran: outcomes.filter((o) => o.value !== undefined).length,
+      skipped: outcomes.filter((o) => o.error instanceof SkippedError).length,
+      failed: failed.length,
+      ...tally(rows),
+      usd: spend.usd,
+      manifest: print.manifest,
+      schema: print.schema,
+      commit: print.dirty ? `${print.commit}*` : print.commit,
+      status: stopped !== null ? 'stopped' : failed.length > 0 ? 'failed' : 'ok',
+      state: 'kept',
+      note: '',
+    });
+  } catch (e) {
+    console.error(`warning: the run finished but the journal was not written: ${(e as Error).message}`);
+  }
+
   return {
     dir,
+    ...(opts.experiment !== undefined ? { experiment: opts.experiment } : {}),
     rows,
     total: jobs.length,
     ran: outcomes.filter((o) => o.value !== undefined).length,
@@ -135,7 +178,7 @@ export async function runResearch(loaded: LoadedResearch, opts: ResearchOptions 
     failed,
     stopped,
     ms: Date.now() - began,
-    spend: book.spent(),
+    spend,
     ...(loaded.meta.budget !== undefined ? { budget: loaded.meta.budget } : {}),
   };
 }
@@ -192,9 +235,36 @@ function bookkeeping(
 }
 
 function pick(loaded: LoadedResearch, opts: ResearchOptions): LoadedEpisode[] {
-  if (opts.only === undefined || opts.only.length === 0) return loaded.episodes;
+  const chosen = opts.experiment === undefined ? loaded.episodes : ofExperiment(loaded, opts.experiment);
+  if (opts.only === undefined || opts.only.length === 0) return chosen;
   const wanted = new Set(opts.only);
-  return loaded.episodes.filter((e) => wanted.has(e.row.id));
+  return chosen.filter((e) => wanted.has(e.row.id));
+}
+
+/**
+ * The episodes a named experiment asks for, each at the count IT asks for.
+ *
+ * An unknown name is refused with the list of real ones rather than run as an
+ * empty selection: a typo would otherwise produce a run folder, a journal row
+ * and a report, all describing nothing.
+ */
+function ofExperiment(loaded: LoadedResearch, name: string): LoadedEpisode[] {
+  const counts =
+    loaded.experiments.get(name) ??
+    [...loaded.experiments.entries()].find(([n]) => n.toLowerCase() === name.toLowerCase())?.[1];
+
+  if (counts === undefined) {
+    const known = [...loaded.experiments.keys()];
+    throw new Error(
+      known.length === 0
+        ? `this research has no experiments sheet, so there is no "${name}" to run`
+        : `no experiment named "${name}" — the workbook has ${known.join(', ')}`
+    );
+  }
+
+  return loaded.episodes
+    .filter((e) => counts.has(e.row.id))
+    .map((e) => ({ ...e, repeat: counts.get(e.row.id)! }));
 }
 
 /** One job per repetition, in row order. */
@@ -282,15 +352,17 @@ async function keysFor(
  * RESUMING reuses the most recent folder. Making a new one would mean every
  * artefact was missing, which is the opposite of resuming.
  */
-function makeRunFolder(loaded: LoadedResearch, resume: boolean): string {
+function makeRunFolder(loaded: LoadedResearch, resume: boolean, experiment?: string): string {
   const parent = resolve(loaded.dir, loaded.meta.out);
   if (resume) {
-    const previous = latestRun(parent);
+    const previous = latestRun(parent, experiment);
     if (previous !== null) return previous;
   }
 
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const dir = resolve(parent, stamp);
+  // The experiment leads the name so the folder says what it answers before it
+  // says when it happened — and so `results/` sorts by question, not by hour.
+  const dir = resolve(parent, experiment === undefined ? stamp : `${experiment}-${stamp}`);
   mkdirSync(resolve(dir, 'episodes'), { recursive: true });
   mkdirSync(resolve(dir, 'logs'), { recursive: true });
   mkdirSync(resolve(dir, 'inputs'), { recursive: true });
@@ -306,11 +378,15 @@ function makeRunFolder(loaded: LoadedResearch, resume: boolean): string {
   return dir;
 }
 
-function latestRun(parent: string): string | null {
+function latestRun(parent: string, experiment?: string): string | null {
   if (!existsSync(parent)) return null;
   const runs = readdirSync(parent, { withFileTypes: true })
     .filter((e) => e.isDirectory())
     .map((e) => e.name)
+    // Resuming an experiment must pick up ITS last folder. Without this a run
+    // would resume whatever happened to be newest and find every artefact
+    // missing, which is the opposite of resuming.
+    .filter((name) => (experiment === undefined ? true : name.startsWith(`${experiment}-`)))
     .sort();
   const last = runs.at(-1);
   return last === undefined ? null : resolve(parent, last);

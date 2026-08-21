@@ -23,6 +23,7 @@ import { parseTask } from './task.ts';
 import { manifestFor, narrow } from '../surface/manifest.ts';
 import { readWorkbook } from './workbook.ts';
 import { ResearchError } from './types.ts';
+import type { Experiments } from './experiments.ts';
 import type { Episode, Init } from '../episode/types.ts';
 import type { Manifest } from '../surface/types.ts';
 import type { EpisodeRow, Research, Task } from './types.ts';
@@ -41,6 +42,8 @@ export interface LoadedResearch {
   /** Enabled rows only — but every row was validated. */
   episodes: LoadedEpisode[];
   disabled: EpisodeRow[];
+  /** From the `experiments` sheet; empty when the workbook has none. */
+  experiments: Experiments;
 }
 
 export interface LoadOptions {
@@ -61,7 +64,7 @@ export async function loadResearch(dir: string, opts: LoadOptions = {}): Promise
   if (!p.ok) throw new ResearchError(p.list);
 
   const meta = parseResearch(await Bun.file(metaPath).text(), p);
-  const rows = await readWorkbook(bookPath, p);
+  const { rows, experiments } = await readWorkbook(bookPath, p);
   if (!p.ok) throw new ResearchError(p.list);
 
   const tasks = await readTasks(root, meta, rows, p);
@@ -76,6 +79,7 @@ export async function loadResearch(dir: string, opts: LoadOptions = {}): Promise
     meta,
     episodes: built.filter((b) => b.row.enabled),
     disabled: built.filter((b) => !b.row.enabled).map((b) => b.row),
+    experiments,
   };
 }
 

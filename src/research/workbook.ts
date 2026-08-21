@@ -23,26 +23,48 @@ import {
   toolset,
 } from './parse.ts';
 import { KNOWN_COLUMNS, REQUIRED_COLUMNS, normalise } from './columns.ts';
+import { parseExperiments } from './experiments.ts';
+import type { Experiments } from './experiments.ts';
 import type { Problems } from './parse.ts';
 import type { EpisodeRow } from './types.ts';
 
 /** Reads one column of one row, as text, blank when the column is absent. */
 type Cell = (name: string) => string;
 
-export async function readWorkbook(path: string, p: Problems, label = basename(path)): Promise<EpisodeRow[]> {
-  const sheet = await openSheet(path, p, label);
-  if (sheet === null) return [];
+/** The sheet that holds the experiments, by name rather than by position. */
+export const EXPERIMENTS_SHEET = 'experiments';
+
+export interface Workbook {
+  rows: EpisodeRow[];
+  /** Empty when the workbook has no experiments sheet, which is the old shape. */
+  experiments: Experiments;
+}
+
+export async function readWorkbook(path: string, p: Problems, label = basename(path)): Promise<Workbook> {
+  const book = await openBook(path, p, label);
+  if (book === null) return { rows: [], experiments: new Map() };
+
+  const sheet = episodesSheet(book, p, label);
+  if (sheet === null) return { rows: [], experiments: new Map() };
 
   const columns = headerOf(sheet, p, label);
   // A header we could not read makes every row meaningless.
-  if (columns === null) return [];
+  if (columns === null) return { rows: [], experiments: new Map() };
 
   // Zero rows is not a fault: a freshly scaffolded research has none until
   // `matrix` fills them. Having nothing to RUN is the runner's complaint.
-  return dataRows(sheet, columns, p, label);
+  const rows = dataRows(sheet, columns, p, label);
+
+  const second = book.worksheets.find((w) => normalise(w.name) === EXPERIMENTS_SHEET);
+  const experiments =
+    second === undefined
+      ? new Map()
+      : parseExperiments(gridOf(second), rows, p, `${label} ${EXPERIMENTS_SHEET}`);
+
+  return { rows, experiments };
 }
 
-async function openSheet(path: string, p: Problems, label: string): Promise<ExcelJS.Worksheet | null> {
+async function openBook(path: string, p: Problems, label: string): Promise<ExcelJS.Workbook | null> {
   const workbook = new ExcelJS.Workbook();
   try {
     await workbook.xlsx.readFile(path);
@@ -50,13 +72,41 @@ async function openSheet(path: string, p: Problems, label: string): Promise<Exce
     p.add(label, `could not be read as a workbook: ${(e as Error).message}`);
     return null;
   }
+  return workbook;
+}
 
-  const sheet = workbook.worksheets[0];
+/**
+ * The episodes sheet is the one named `episodes`, or failing that the first one
+ * that is not the experiments sheet.
+ *
+ * Position alone was enough while there was only ever one sheet. It stopped
+ * being enough the moment a second could exist: a workbook whose author dragged
+ * the experiments tab to the front would have had every episode read out of it.
+ */
+export function episodesSheetOf(book: ExcelJS.Workbook): ExcelJS.Worksheet | undefined {
+  const named = book.worksheets.find((w) => normalise(w.name) === 'episodes');
+  return named ?? book.worksheets.find((w) => normalise(w.name) !== EXPERIMENTS_SHEET);
+}
+
+function episodesSheet(book: ExcelJS.Workbook, p: Problems, label: string): ExcelJS.Worksheet | null {
+  const sheet = episodesSheetOf(book);
   if (!sheet) {
-    p.add(label, 'has no sheets');
+    p.add(label, book.worksheets.length === 0 ? 'has no sheets' : 'has no episodes sheet');
     return null;
   }
   return sheet;
+}
+
+/** A sheet as plain text, so the experiments parser never meets a cell object. */
+function gridOf(sheet: ExcelJS.Worksheet): string[][] {
+  const grid: string[][] = [];
+  for (let line = 1; line <= sheet.rowCount; line++) {
+    const row = sheet.getRow(line);
+    const cells: string[] = [];
+    for (let col = 1; col <= sheet.columnCount; col++) cells.push(text(row.getCell(col).text));
+    grid.push(cells);
+  }
+  return grid;
 }
 
 /** Column name to index, or null when the header itself is unusable. */

@@ -238,12 +238,18 @@ async function runPlan(
   // that watched only for thrown errors would miss the case this exists to
   // catch: an operation the agent cannot reach, scoring a clean zero.
   const made = surface.calls.slice(fromCall);
-  for (const call of made) {
+  made.forEach((call, i) => {
     // A null status is a call that threw; the catch above already recorded it.
-    if (call.status !== null && call.status !== undefined && call.status >= 400) {
+    if (call.status === null || call.status === undefined) return;
+    const wanted = plan[i]?.status;
+    if (wanted !== undefined) {
+      // Declared: assert it exactly. This is where a case pins the quirk it
+      // rests on, so a port that stopped reproducing one fails here.
+      if (call.status !== wanted) problems.push(`${call.op} answered ${call.status}, not the ${wanted} this path expects`);
+    } else if (call.status >= 400) {
       problems.push(`${call.op} answered ${call.status}`);
     }
-  }
+  });
 
   return {
     kind: 'say' as const,

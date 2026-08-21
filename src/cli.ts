@@ -46,8 +46,8 @@ const USAGE = `excruciate <command> [args]
   matrix  <dir> [--tasks a,b] [--models m] [--surfaces s] [--memory m]
                 [--faults f] [--tools l] [--temperature t] [--thinking e]
                 [--repeat n]
-  run     <dir> [--only id,...] [--concurrency n] [--limit n]
-                [--resume] [--dry] [--no-preflight]
+  run     <dir> [--experiment name] [--only id,...] [--concurrency n]
+                [--limit n] [--resume] [--dry] [--no-preflight]
   report  <run-dir | research-dir> [--run name] [--write] [--json]
   check   <research-dir>
 
@@ -396,45 +396,66 @@ function modelsArgs(argv: string[]): ModelsArgs {
 async function cmdCheck(dir: string): Promise<number> {
   try {
     const research = await loadResearch(dir);
-    const rows = research.episodes.length;
-    const runs = research.episodes.reduce((n, e) => n + e.repeat, 0);
-    console.log(`ok  ${research.meta.name}`);
-    console.log(`    ${rows} enabled row${rows === 1 ? '' : 's'}, ${research.disabled.length} off, ${runs} episodes to run`);
-    for (const e of research.episodes) {
-      console.log(
-        `    ${e.row.id.padEnd(24)} ${e.episode.surface.padEnd(7)} ${e.episode.model}  ` +
-          `${e.episode.memory}  faults=${JSON.stringify(e.episode.faults)}  x${e.repeat}`
-      );
-    }
-    // The forecast paths, once per distinct task and surface. Running them per
-    // ROW would walk the same path sixty times for sixty models; the path does
-    // not depend on which model is about to take it.
-    const seen = new Set<string>();
-    const problems: PlanProblem[] = [];
-    for (const e of research.episodes) {
-      const key = `${e.row.task}|${JSON.stringify(e.episode.tools ?? 'all')}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      problems.push(...(await verifyPlans(e.episode)));
-    }
-
-    if (problems.length > 0) {
-      console.error(`\n${problems.length} forecast path${problems.length === 1 ? '' : 's'} did not hold:`);
-      for (const p of problems) console.error(`  ${p.episode} [${p.path}] ${p.message}`);
-      console.error(
-        '\nEach of these is a hole in the task, not a finding: a path an agent could\n' +
-          'not walk, a check that can never pass, or a world with no hazard in it.'
-      );
-      return 1;
-    }
-
-    const walked = seen.size;
-    if (walked > 0) console.log(`    forecast paths walked for ${walked} task/surface combination${walked === 1 ? '' : 's'}`);
-    return 0;
+    describe(research);
+    return await walkForecasts(research);
   } catch (e) {
     console.error((e as Error).message);
     return 1;
   }
+}
+
+function describe(research: Awaited<ReturnType<typeof loadResearch>>): void {
+  const rows = research.episodes.length;
+  const runs = research.episodes.reduce((n, e) => n + e.repeat, 0);
+  console.log(`ok  ${research.meta.name}`);
+  console.log(`    ${rows} enabled row${rows === 1 ? '' : 's'}, ${research.disabled.length} off, ${runs} episodes to run`);
+
+  for (const [name, counts] of research.experiments) {
+    const episodes = [...counts.values()].reduce((n, c) => n + c, 0);
+    console.log(
+      `    experiment ${name.padEnd(20)} ${counts.size} row${counts.size === 1 ? '' : 's'}, ` +
+        `${episodes} episode${episodes === 1 ? '' : 's'}`
+    );
+  }
+  for (const e of research.episodes) {
+    console.log(
+      `    ${e.row.id.padEnd(24)} ${e.episode.surface.padEnd(7)} ${e.episode.model}  ` +
+        `${e.episode.memory}  faults=${JSON.stringify(e.episode.faults)}  x${e.repeat}`
+    );
+  }
+}
+
+/**
+ * Walk each forecast path once per distinct task and surface.
+ *
+ * Per ROW would walk the same path sixty times for sixty models, and the path
+ * does not depend on which model is about to take it.
+ */
+async function walkForecasts(research: Awaited<ReturnType<typeof loadResearch>>): Promise<number> {
+  const seen = new Set<string>();
+  const problems: PlanProblem[] = [];
+
+  for (const e of research.episodes) {
+    const key = `${e.row.task}|${JSON.stringify(e.episode.tools ?? 'all')}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    problems.push(...(await verifyPlans(e.episode)));
+  }
+
+  if (problems.length > 0) {
+    console.error(`\n${problems.length} forecast path${problems.length === 1 ? '' : 's'} did not hold:`);
+    for (const p of problems) console.error(`  ${p.episode} [${p.path}] ${p.message}`);
+    console.error(
+      '\nEach of these is a hole in the task, not a finding: a path an agent could\n' +
+        'not walk, a check that can never pass, or a world with no hazard in it.'
+    );
+    return 1;
+  }
+
+  if (seen.size > 0) {
+    console.log(`    forecast paths walked for ${seen.size} task/surface combination${seen.size === 1 ? '' : 's'}`);
+  }
+  return 0;
 }
 
 try {

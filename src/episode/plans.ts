@@ -66,7 +66,10 @@ async function walk(spec: Episode, path: 'pass' | 'fail'): Promise<PlanProblem[]
     // world files behind would put fictional episodes in a results folder where
     // a reader would take them for measurements.
     const { out: _out, trail: _trail, ...quiet } = spec;
-    result = await runEpisode({ ...quiet, scripted: path });
+    // FAULTS OFF. They are chosen by the row, and an `after` fault answers 504
+    // by design; walking a path with one live would report the injected failure
+    // as a hole in the task. This checks the ground every fault arm stands on.
+    result = await runEpisode({ ...quiet, scripted: path, faults: 'none' });
   } catch (e) {
     return say(`the path could not be walked: ${(e as Error).message}`);
   }

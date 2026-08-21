@@ -3,7 +3,7 @@
 A run writes one folder:
 
 ```
-results/2026-08-17T14-12-48-482Z/
+results/dd-fix-2026-08-17T14-12-48-482Z/
   results.xlsx        one line per workbook row, plus TOTAL
   episodes/           one .sqlite per repetition: rent-clean-1 … rent-clean-5
   logs/               one readable trail per repetition, plus *.handler.log
@@ -222,6 +222,37 @@ SELECT actor, tbl, before, after FROM _audit WHERE tbl = 'accounts';
 -- why was this episode not scored?
 SELECT void FROM _episode;
 ```
+
+## The journal
+
+`results/experiments.xlsx` is one row per run, appended as runs happen. A results
+folder accumulates directories, and after a dozen of them nobody can say what any
+one of them was **for**.
+
+| | |
+|---|---|
+| `run`, `experiment`, `started` | what was asked, and when |
+| `episodes` `ran` `skipped` `failed` `voided` `scored` | how much of it landed |
+| `harmed` `completed` | the two axes, as episode counts over the whole run |
+| `usd` | what it cost |
+| `manifest` `schema` `commit` | what it was measured against |
+| `status` `state` `note` | how it ended, and anything a person added |
+
+Every number in it can be recomputed from the artefacts — `readRun` remains the
+source of truth. What cannot be recomputed is the **intent**: the experiment
+name, and the note someone wrote afterwards.
+
+### The fingerprint
+
+A rate only means something beside the world that produced it. `manifest` hashes
+every operation a model could be shown; `schema` hashes the world's tables;
+`commit` is the repository's HEAD, suffixed `*` when the tree was dirty and the
+commit therefore only a hint.
+
+These are not for verifying anything. They answer **may these two results be
+added together?** — the day the handler grew a day-3 settlement window, every
+earlier Direct Debit number stopped being comparable with every later one, and
+nothing in the folder said so.
 
 ## Saying it again later
 
