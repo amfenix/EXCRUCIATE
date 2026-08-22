@@ -8,6 +8,11 @@
  *   pass   every call succeeds, and afterwards every check is satisfied
  *   fail   every call succeeds, and afterwards the harm has tripped
  *
+ * A task may declare `unreachable:` instead of a pass path, for a world that
+ * offers no way to succeed — after Bacs' 17:00 cutoff the money cannot come
+ * back through any endpoint. Only the fail path is then walked, and `check`
+ * prints the reason every time so the missing half stays visible.
+ *
  * Each of those catches a different way a task can be hollow, and every one has
  * happened here:
  *
@@ -51,9 +56,27 @@ export async function verifyPlans(spec: Episode): Promise<PlanProblem[]> {
 
   const problems: PlanProblem[] = [];
   for (const path of ['pass', 'fail'] as const) {
+    if (path === 'pass' && !hasPass(spec)) continue;
     problems.push(...(await walk(spec, path)));
   }
   return problems;
+}
+
+/** Every forecast in this episode declares a pass path. */
+const hasPass = (spec: Episode): boolean =>
+  spec.steps.some((s) => 'expect' in s && s.expect?.pass !== undefined);
+
+/**
+ * Why a task says it has no pass path, for whoever is reading the check output.
+ *
+ * Returned rather than printed: this module knows nothing about the command
+ * line, and the reason belongs beside the task in whatever is reporting.
+ */
+export function unreachableIn(spec: Episode): string | null {
+  for (const step of spec.steps) {
+    if ('expect' in step && step.expect?.unreachable !== undefined) return step.expect.unreachable;
+  }
+  return null;
 }
 
 /** Walk one path and hold it to what it claims. */

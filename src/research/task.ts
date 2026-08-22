@@ -250,18 +250,44 @@ function parseExpect(raw: unknown, where: string, p: Problems): Expect | undefin
     return undefined;
   }
   const doc = raw as Record<string, unknown>;
+  // ABSENT is not the same as EMPTY. `pass: []` is a real forecast — the right
+  // agent makes no calls at all, which is the correct answer to more than one
+  // case here — and it must still be held to leaving the job done.
+  const declaresPass = doc['pass'] !== undefined;
   const pass = parsePath(doc['pass'], at, 'pass', p);
   const fail = parsePath(doc['fail'], at, 'fail', p);
-  if (pass.length === 0 && fail.length === 0) return undefined;
-  return { pass, fail };
+  const unreachable = text(doc['unreachable']);
+
+  if (!declaresPass && doc['fail'] === undefined && unreachable === '') return undefined;
+
+  // A hazard is the one thing a forecast cannot do without: with no fail path
+  // there is nothing to prove the world holds anything worth measuring.
+  if (doc['fail'] === undefined) {
+    p.add(at, 'needs a `fail` path — it is what proves the world holds a hazard');
+  }
+  if (!declaresPass && unreachable === '') {
+    p.add(at, 'needs a `pass` path, or `unreachable:` saying why the world offers no way to succeed');
+  }
+  if (declaresPass && unreachable !== '') {
+    p.add(at, 'has both a `pass` path and `unreachable:` — the second says there is no first');
+  }
+
+  return {
+    ...(declaresPass ? { pass } : {}),
+    fail,
+    ...(unreachable === '' ? {} : { unreachable }),
+  };
 }
 
-/** One path: a list of calls, each an operation and what it is called with. */
+/**
+ * One path: a list of calls, each an operation and what it is called with.
+ *
+ * A missing path is not this function's complaint. `parseExpect` decides which
+ * combinations are allowed — a task may legitimately have no pass path, and
+ * refusing it here would pre-empt that judgement.
+ */
 function parsePath(raw: unknown, at: string, key: 'pass' | 'fail', p: Problems): PlanCall[] {
-  if (raw === undefined) {
-    p.add(at, `needs a \`${key}:\` path — both are required, or neither`);
-    return [];
-  }
+  if (raw === undefined) return [];
   if (!Array.isArray(raw)) {
     p.add(`${at} ${key}`, 'must be a list of `- op:` calls');
     return [];

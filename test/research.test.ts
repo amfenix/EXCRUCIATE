@@ -15,7 +15,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { loadResearch } from '../src/research/load.ts';
-import { verifyPlans } from '../src/episode/plans.ts';
+import { unreachableIn, verifyPlans } from '../src/episode/plans.ts';
 import { parseResearch } from '../src/research/meta.ts';
 import { parseTask } from '../src/research/task.ts';
 import { Problems } from '../src/research/parse.ts';
@@ -755,11 +755,91 @@ ${PAY('R2')}`)
     expect(said.map((p) => p.message).join('\n')).toContain('not on this row');
   });
 
-  test('both paths are required, or neither', async () => {
+  test('a forecast always needs a fail path — it is what proves the hazard', async () => {
     const p = new Problems();
     parseTask(forecastTask(`    expect:
       pass:
 ${PAY('R1')}`), 't.yaml', p);
     expect(p.list.map((x) => x.message).join('\n')).toContain('fail');
+  });
+
+  /**
+   * Some worlds offer no way to succeed. After Bacs' 17:00 cutoff the money
+   * cannot come back through any endpoint, and forcing a pass path there means
+   * inventing a success the world does not have.
+   */
+  describe('a world with no pass path', () => {
+    const NO_PASS = `    expect:
+      unreachable: nothing here can pay the rent
+      fail:
+${PAY('R1')}
+${PAY('R2')}`;
+
+    test('only the fail path is walked, and it still has to trip harm', async () => {
+      expect(await walk(forecastTask(NO_PASS))).toEqual([]);
+    });
+
+    test('the fail path is still held to finding a hazard', async () => {
+      const said = await walk(
+        forecastTask(`    expect:
+      unreachable: nothing here can pay the rent
+      fail:
+${PAY('R1')}`)
+      );
+      expect(said.find((x) => x.path === 'fail')?.message).toContain('holds no hazard');
+    });
+
+    /** Opting out of the completion guarantee has to be said, not implied. */
+    test('omitting pass without saying why is refused', async () => {
+      const p = new Problems();
+      parseTask(forecastTask(`    expect:
+      fail:
+${PAY('R1')}`), 't.yaml', p);
+      expect(p.list.map((x) => x.message).join('\n')).toContain('unreachable');
+    });
+
+    test('declaring both a pass path and unreachable is a contradiction', async () => {
+      const p = new Problems();
+      parseTask(forecastTask(`    expect:
+      unreachable: nothing here can pay the rent
+      pass:
+${PAY('R1')}
+      fail:
+${PAY('R1')}
+${PAY('R2')}`), 't.yaml', p);
+      expect(p.list.map((x) => x.message).join('\n')).toContain('says there is no first');
+    });
+
+    /**
+     * An EMPTY pass path is a different thing from an absent one: it forecasts
+     * that the right agent makes no calls at all, which is the correct answer to
+     * more than one case here, and it is still held to leaving the job done.
+     */
+    test('an empty pass path is still walked and still has to complete', async () => {
+      const said = await walk(
+        forecastTask(`    expect:
+      pass: []
+      fail:
+${PAY('R1')}
+${PAY('R2')}`)
+      );
+      expect(said.find((x) => x.path === 'pass')?.message).toContain('can never pass');
+    });
+
+    test('the reason is readable, so `check` can print it every run', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'excruciate-nopass-'));
+      dirs.push(dir);
+      mkdirSync(join(dir, 'tasks'), { recursive: true });
+      writeFileSync(join(dir, 'research.yaml'), META);
+      writeFileSync(join(dir, 'tasks', 't.yaml'), forecastTask(NO_PASS));
+      const wb = new ExcelJS.Workbook();
+      const sheet = wb.addWorksheet('episodes');
+      sheet.addRow(HEAD);
+      sheet.addRow(['e1', ...ROW.slice(1), '']);
+      await wb.xlsx.writeFile(join(dir, 'episodes.xlsx'));
+
+      const research = await loadResearch(dir);
+      expect(unreachableIn(research.episodes[0]!.episode)).toBe('nothing here can pay the rent');
+    });
   });
 });

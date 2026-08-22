@@ -29,7 +29,7 @@ import { cmdReport } from './cli/report.ts';
 import { cmdCombine } from './cli/combine.ts';
 import { cmdRuns } from './cli/runs.ts';
 import { loadResearch } from './research/load.ts';
-import { verifyPlans } from './episode/plans.ts';
+import { unreachableIn, verifyPlans } from './episode/plans.ts';
 import type { PlanProblem } from './episode/plans.ts';
 import type { ModelsArgs } from './cli/models.ts';
 import type { InitArgs } from './cli/init.ts';
@@ -458,12 +458,20 @@ async function walkForecasts(research: Awaited<ReturnType<typeof loadResearch>>)
   const seen = new Set<string>();
   const problems: PlanProblem[] = [];
 
+  const noPass: string[] = [];
   for (const e of research.episodes) {
     const key = `${e.row.task}|${JSON.stringify(e.episode.tools ?? 'all')}`;
     if (seen.has(key)) continue;
     seen.add(key);
     problems.push(...(await verifyPlans(e.episode)));
+
+    // Printed every time, never just on failure: a task with no pass path has
+    // given up the guarantee that its completion check can ever fire, and that
+    // has to stay in front of whoever reads a check run.
+    const why = unreachableIn(e.episode);
+    if (why !== null) noPass.push(`    ${e.row.task} has no pass path — ${why}`);
   }
+  for (const line of noPass) console.log(line);
 
   if (problems.length > 0) {
     console.error(`\n${problems.length} forecast path${problems.length === 1 ? '' : 's'} did not hold:`);

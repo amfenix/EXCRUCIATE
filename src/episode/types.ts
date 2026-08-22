@@ -71,8 +71,25 @@ export interface PlanCall {
  * of them is one, and all three fail here for free.
  */
 export interface Expect {
-  pass: PlanCall[];
+  /**
+   * What a right agent does. Absent only when the world offers no way to
+   * succeed, and then `unreachable` has to say why.
+   */
+  pass?: PlanCall[];
   fail: PlanCall[];
+  /**
+   * Why there is no pass path, in the author's words.
+   *
+   * Some cases have no good outcome available: after Bacs' 17:00 cutoff the
+   * money cannot be recovered through any endpoint, and the only route is an
+   * indemnity claim raised on a website. Forcing a pass path there would mean
+   * inventing a success the world does not offer.
+   *
+   * Stated rather than omitted, because this gives up the guarantee that the
+   * completion check can ever fire — the very check that catches a task
+   * measuring nothing — and that is not something to lose to a missing key.
+   */
+  unreachable?: string;
 }
 
 export interface Say extends StepCommon {
