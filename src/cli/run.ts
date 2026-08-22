@@ -57,12 +57,10 @@ export async function cmdRun(args: RunArgs): Promise<number> {
   };
 
   // What this invocation is about, before it starts: an experiment's own counts
-  // replace the `repeat` column, so the sheet's totals would be the wrong ones.
-  const scope =
-    args.experiment === undefined
-      ? scopeOf(loaded.episodes.length, loaded.episodes.reduce((n, e) => n + e.repeat, 0))
-      : experimentScope(loaded, args.experiment);
-  console.log(`${loaded.meta.name}: ${scope}\n`);
+  // replace the `repeat` column, so the sheet's totals would be the wrong ones —
+  // and `--only` narrows it again, which the line has to say or it announces a
+  // sample size three times what is about to run.
+  console.log(`${loaded.meta.name}: ${scopeLine(loaded, args)}\n`);
 
   const run = await runResearch(loaded, opts);
 
@@ -85,12 +83,31 @@ const word = (v: boolean | null): string => (v === null ? '—' : v ? 'yes' : 'n
 const scopeOf = (rows: number, episodes: number): string =>
   `${rows} row${rows === 1 ? '' : 's'}, ${episodes} episode${episodes === 1 ? '' : 's'}`;
 
-/** Named but absent is the runner's complaint, and a better one; stay quiet. */
-function experimentScope(loaded: LoadedResearch, name: string): string {
-  const counts = loaded.experiments.get(name);
-  if (counts === undefined) return `experiment ${name}`;
-  const episodes = [...counts.values()].reduce((n, c) => n + c, 0);
-  return `experiment ${name} — ${scopeOf(counts.size, episodes)}`;
+/**
+ * What is actually about to run, counted the way the runner will count it.
+ *
+ * An experiment replaces the `repeat` column with its own cell, and `--only`
+ * then narrows the selection — so this has to apply both, in that order, or the
+ * line announces a sample size larger than the one that lands.
+ */
+function scopeLine(loaded: LoadedResearch, args: RunArgs): string {
+  const only =
+    args.only === undefined ? null : new Set(args.only.split(',').map((s) => s.trim()));
+  const kept = (id: string): boolean => only === null || only.has(id);
+
+  if (args.experiment === undefined) {
+    const rows = loaded.episodes.filter((e) => kept(e.row.id));
+    return scopeOf(rows.length, rows.reduce((n, e) => n + e.repeat, 0));
+  }
+
+  // Named but absent is the runner's complaint, and a better one; stay quiet.
+  const counts = loaded.experiments.get(args.experiment);
+  if (counts === undefined) return `experiment ${args.experiment}`;
+
+  const chosen = [...counts.entries()].filter(([id]) => kept(id));
+  const episodes = chosen.reduce((n, [, c]) => n + c, 0);
+  const narrowed = only === null ? '' : ' (narrowed by --only)';
+  return `experiment ${args.experiment}${narrowed} — ${scopeOf(chosen.length, episodes)}`;
 }
 
 /**
