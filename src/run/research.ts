@@ -9,8 +9,8 @@
  * its own copy of both input files, so a result is self-describing six months
  * later without trusting that the workbook has not moved on.
  */
-import { copyFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { basename, resolve } from 'node:path';
 import { runEpisode } from '../episode/run.ts';
 import { configureKeys } from '../agent.ts';
 import { KNOWN_PROVIDERS, resolveKey } from '../keys.ts';
@@ -412,6 +412,19 @@ function makeRunFolder(loaded: LoadedResearch, resume: boolean, experiment?: str
   for (const file of ['research.yaml', 'episodes.xlsx']) {
     const from = resolve(loaded.dir, file);
     if (existsSync(from)) copyFileSync(from, resolve(dir, 'inputs', file));
+  }
+
+  // AND every arm as it resolved. A task file with an axis is not what ran — the
+  // arm is — and six months on nobody should have to render one in their head to
+  // find out what the world held.
+  if (loaded.rendered.size > 0) {
+    mkdirSync(resolve(dir, 'inputs', 'tasks'), { recursive: true });
+    for (const [key, source] of loaded.rendered) {
+      const [file, arm = ''] = key.split('#');
+      const base = basename(file!).replace(/\.ya?ml$/i, '');
+      const name = arm === '' ? `${base}.yaml` : `${base}--${arm}.yaml`;
+      writeFileSync(resolve(dir, 'inputs', 'tasks', name), source);
+    }
   }
   return dir;
 }

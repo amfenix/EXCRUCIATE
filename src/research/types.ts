@@ -61,6 +61,13 @@ export interface EpisodeRow {
   id: string;
   enabled: boolean;
   task: string;
+  /**
+   * Which arm of the task's axis this row runs. Blank for a task with no axis.
+   *
+   * The row says WHICH arm; the task says what an arm IS. Nothing points the
+   * other way: a task never names a row, a model, an experiment or a claim.
+   */
+  arm?: string;
   model: string;
   /** Overrides the research default. */
   surface?: SurfaceKind;

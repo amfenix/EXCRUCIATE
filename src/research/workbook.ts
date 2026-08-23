@@ -168,6 +168,7 @@ const rowOf = (cell: Cell, p: Problems, where: string, line: number, id: string)
   line,
   enabled: bool(p, where, 'enabled', cell('enabled'), true),
   task: required(p, where, 'task', cell('task')),
+  ...(isBlank(cell('arm')) ? {} : { arm: text(cell('arm')) }),
   model: required(p, where, 'model', cell('model')),
   memory: oneOf(p, where, 'memory', cell('memory'), ['session', 'fresh'] as const, 'session'),
   ...(isBlank(cell('surface'))

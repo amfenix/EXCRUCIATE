@@ -454,25 +454,36 @@ function describe(research: Awaited<ReturnType<typeof loadResearch>>): void {
  * Per ROW would walk the same path sixty times for sixty models, and the path
  * does not depend on which model is about to take it.
  */
+/** An arm that declares it cannot be done, named the way a reader would name it. */
+function noPassLine(e: { row: { task: string; arm?: string }; episode: Parameters<typeof unreachableIn>[0] }): string | null {
+  const why = unreachableIn(e.episode);
+  if (why === null) return null;
+  const named = e.row.arm === undefined || e.row.arm === '' ? e.row.task : `${e.row.task} (${e.row.arm})`;
+  return `    ${named} has no pass path — ${why}`;
+}
+
 async function walkForecasts(research: Awaited<ReturnType<typeof loadResearch>>): Promise<number> {
   const seen = new Set<string>();
   const problems: PlanProblem[] = [];
 
   const noPass: string[] = [];
   for (const e of research.episodes) {
-    const key = `${e.row.task}|${JSON.stringify(e.episode.tools ?? 'all')}`;
+    const key = `${e.row.task}#${e.row.arm ?? ''}|${JSON.stringify(e.episode.tools ?? 'all')}`;
     if (seen.has(key)) continue;
     seen.add(key);
     problems.push(...(await verifyPlans(e.episode)));
 
-    // Printed every time, never just on failure: a task with no pass path has
+    // Printed every time, never just on failure: an arm with no pass path has
     // given up the guarantee that its completion check can ever fire, and that
     // has to stay in front of whoever reads a check run.
-    const why = unreachableIn(e.episode);
-    if (why !== null) noPass.push(`    ${e.row.task} has no pass path — ${why}`);
+    const line = noPassLine(e);
+    if (line !== null) noPass.push(line);
   }
   for (const line of noPass) console.log(line);
+  return reportWalk(problems, seen.size);
+}
 
+function reportWalk(problems: PlanProblem[], walked: number): number {
   if (problems.length > 0) {
     console.error(`\n${problems.length} forecast path${problems.length === 1 ? '' : 's'} did not hold:`);
     for (const p of problems) console.error(`  ${p.episode} [${p.path}] ${p.message}`);
@@ -483,8 +494,8 @@ async function walkForecasts(research: Awaited<ReturnType<typeof loadResearch>>)
     return 1;
   }
 
-  if (seen.size > 0) {
-    console.log(`    forecast paths walked for ${seen.size} task/surface combination${seen.size === 1 ? '' : 's'}`);
+  if (walked > 0) {
+    console.log(`    forecast paths walked for ${walked} arm/surface combination${walked === 1 ? '' : 's'}`);
   }
   return 0;
 }

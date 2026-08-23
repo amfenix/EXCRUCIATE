@@ -18,7 +18,7 @@ const KINDS = ['before', 'after', 'garbled', 'slow'] as const;
 const AXES = ['harm', 'completion', 'note'] as const;
 const SURFACES = ['tools', 'api', 'search'] as const;
 
-export function parseTask(source: string, where: string, p: Problems): Task {
+export function parseTask(source: string, where: string, p: Problems, arm = ''): Task {
   let doc: Record<string, unknown>;
   try {
     const parsed = (Bun as unknown as { YAML: { parse(s: string): unknown } }).YAML.parse(source);
@@ -34,7 +34,7 @@ export function parseTask(source: string, where: string, p: Problems): Task {
 
   const task: Task = {
     init: parseInit(doc['init'], where, p),
-    steps: parseSteps(doc['steps'], where, p),
+    steps: parseSteps(doc['steps'], where, p, arm),
     grade: { checks: parseChecks(doc['grade'], where, p) },
     ...(isBlank(doc['name']) ? {} : { name: text(doc['name']) }),
     ...(isBlank(doc['maxSteps']) ? {} : { maxSteps: integer(p, where, 'maxSteps', doc['maxSteps'], 12) }),
@@ -119,12 +119,12 @@ function parseInit(raw: unknown, where: string, p: Problems): Init {
   };
 }
 
-function parseSteps(raw: unknown, where: string, p: Problems): Step[] {
+function parseSteps(raw: unknown, where: string, p: Problems, arm: string): Step[] {
   if (!Array.isArray(raw) || raw.length === 0) {
     p.add(where, 'steps must be a non-empty list');
     return [];
   }
-  return raw.map((entry, i) => parseStep(entry, `${where} step ${i + 1}`, p));
+  return raw.map((entry, i) => parseStep(entry, `${where} step ${i + 1}`, p, arm));
 }
 
 /** Everything a step with a message may carry. */
@@ -132,7 +132,8 @@ function parseSay(
   doc: Record<string, unknown>,
   timing: Record<string, unknown>,
   where: string,
-  p: Problems
+  p: Problems,
+  arm: string
 ): Say {
   const say: Say = { say: text(doc['say']), ...timing };
 
@@ -146,13 +147,13 @@ function parseSay(
     say.interrupt = { afterCalls: integer(p, where, 'interrupt', doc['interrupt'], 1) };
   }
 
-  const expect = parseExpect(doc['expect'], where, p);
+  const expect = parseExpect(doc['expect'], where, p, arm);
   if (expect !== undefined) say.expect = expect;
 
   return say;
 }
 
-function parseStep(raw: unknown, where: string, p: Problems): Step {
+function parseStep(raw: unknown, where: string, p: Problems, arm: string): Step {
   if (raw === null || typeof raw !== 'object') {
     p.add(where, 'must be a mapping with either `say` or `do`');
     return { do: [] };
@@ -169,7 +170,7 @@ function parseStep(raw: unknown, where: string, p: Problems): Step {
   if (hasSay && hasDo) p.add(where, 'a step has either `say` or `do`, never both');
   if (!hasSay && !hasDo) p.add(where, 'a step needs `say` (call the model) or `do` (move the world)');
 
-  if (hasSay) return parseSay(doc, timing, where, p);
+  if (hasSay) return parseSay(doc, timing, where, p, arm);
 
   return {
     do: parseDo(doc['do'], where, p),
@@ -235,6 +236,37 @@ function parseStatements(raw: unknown, where: string, p: Problems): Statement[] 
 }
 
 /**
+ * A forecast may be keyed by arm, for the arms that differ in the SHAPE of the
+ * path rather than in a value inside it: a collection that has not settled has
+ * no pass path at all, and no substitution turns `pass:` into `unreachable:`.
+ * Values are handled by the template and never need this.
+ */
+function perArm(
+  doc: Record<string, unknown>,
+  at: string,
+  arm: string,
+  p: Problems
+): { keyed: boolean; raw?: unknown } {
+  const keys = Object.keys(doc);
+  const shared = keys.some((k) => k === 'pass' || k === 'fail' || k === 'unreachable');
+  const armKeys = keys.filter((k) => k !== 'pass' && k !== 'fail' && k !== 'unreachable');
+  if (armKeys.length === 0) return { keyed: false };
+  if (shared) {
+    p.add(at, `mixes a shared forecast with per-arm keys (${armKeys.join(', ')}) — it is one or the other`);
+    return { keyed: true };
+  }
+  if (arm === '') {
+    p.add(at, `is keyed by arm (${armKeys.join(', ')}), and this file declares no axis`);
+    return { keyed: true };
+  }
+  if (doc[arm] === undefined) {
+    p.add(at, `has no forecast for arm "${arm}" — arms present: ${armKeys.join(', ')}`);
+    return { keyed: true };
+  }
+  return { keyed: true, raw: doc[arm] };
+}
+
+/**
  * The two paths a step forecasts: what a right agent does, what a wrong one does.
  *
  * Both are complete calls with parameters, not operation names, because the
@@ -242,7 +274,7 @@ function parseStatements(raw: unknown, where: string, p: Problems): Statement[] 
  * operation exists; walking proves an agent could have reached it, with the ids
  * this world actually contains.
  */
-function parseExpect(raw: unknown, where: string, p: Problems): Expect | undefined {
+function parseExpect(raw: unknown, where: string, p: Problems, arm: string): Expect | undefined {
   if (raw === undefined || raw === null) return undefined;
   const at = `${where} expect`;
   if (typeof raw !== 'object' || Array.isArray(raw)) {
@@ -250,6 +282,10 @@ function parseExpect(raw: unknown, where: string, p: Problems): Expect | undefin
     return undefined;
   }
   const doc = raw as Record<string, unknown>;
+
+  const mine = perArm(doc, at, arm, p);
+  // Resolved with no arm, so a nested per-arm block is refused rather than looping.
+  if (mine.keyed) return mine.raw === undefined ? undefined : parseExpect(mine.raw, where, p, '');
   // ABSENT is not the same as EMPTY. `pass: []` is a real forecast — the right
   // agent makes no calls at all, which is the correct answer to more than one
   // case here — and it must still be held to leaving the job done.
@@ -259,10 +295,26 @@ function parseExpect(raw: unknown, where: string, p: Problems): Expect | undefin
   const unreachable = text(doc['unreachable']);
 
   if (!declaresPass && doc['fail'] === undefined && unreachable === '') return undefined;
+  complainAboutShape(declaresPass, doc['fail'] !== undefined, unreachable, at, p);
 
+  return {
+    ...(declaresPass ? { pass } : {}),
+    fail,
+    ...(unreachable === '' ? {} : { unreachable }),
+  };
+}
+
+/** What a forecast must have, and what it may not have twice. */
+function complainAboutShape(
+  declaresPass: boolean,
+  declaresFail: boolean,
+  unreachable: string,
+  at: string,
+  p: Problems
+): void {
   // A hazard is the one thing a forecast cannot do without: with no fail path
   // there is nothing to prove the world holds anything worth measuring.
-  if (doc['fail'] === undefined) {
+  if (!declaresFail) {
     p.add(at, 'needs a `fail` path — it is what proves the world holds a hazard');
   }
   if (!declaresPass && unreachable === '') {
@@ -271,12 +323,6 @@ function parseExpect(raw: unknown, where: string, p: Problems): Expect | undefin
   if (declaresPass && unreachable !== '') {
     p.add(at, 'has both a `pass` path and `unreachable:` — the second says there is no first');
   }
-
-  return {
-    ...(declaresPass ? { pass } : {}),
-    fail,
-    ...(unreachable === '' ? {} : { unreachable }),
-  };
 }
 
 /**

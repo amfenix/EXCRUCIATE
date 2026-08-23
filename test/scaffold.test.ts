@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { cmdInit } from '../src/cli/init.ts';
 import { cmdMatrix } from '../src/cli/matrix.ts';
+import { COLUMNS } from '../src/research/columns.ts';
 import { loadResearch } from '../src/research/load.ts';
 import { runEpisode } from '../src/episode/run.ts';
 import { call as call2raw, close as close2, init as init2raw } from '../src/runner.ts';
@@ -197,15 +198,17 @@ describe('matrix fills the workbook from the tasks', () => {
 
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.readFile(join(dir, 'episodes.xlsx'));
-    wb.worksheets[0]!.getRow(2).getCell(2).value = 'no';
-    wb.worksheets[0]!.getRow(2).getCell(12).value = 'too expensive';
+    const enabled = COLUMNS.indexOf('enabled') + 1;
+    const notes = COLUMNS.indexOf('notes') + 1;
+    wb.worksheets[0]!.getRow(2).getCell(enabled).value = 'no';
+    wb.worksheets[0]!.getRow(2).getCell(notes).value = 'too expensive';
     await wb.xlsx.writeFile(join(dir, 'episodes.xlsx'));
 
     await matrix(dir);
     const after = await rows(dir);
     expect(after).toHaveLength(3); // header + 2, nothing appended
-    expect(after[1]![1]).toBe('no');
-    expect(after[1]![11]).toBe('too expensive');
+    expect(after[1]![enabled - 1]).toBe('no');
+    expect(after[1]![notes - 1]).toBe('too expensive');
   }, 60_000);
 
   test('temperature and thinking are never put on the same row', async () => {
@@ -213,8 +216,12 @@ describe('matrix fills the workbook from the tasks', () => {
     await init(dir);
     await matrix(dir, { temperature: '0,1', thinking: 'high' });
 
+    // BY HEADER, never by position: this read `[, , , , , temperature, thinking]`
+    // and quietly started asserting about the wrong two columns the day an `arm`
+    // column was inserted before them.
     for (const row of (await rows(dir)).slice(1)) {
-      const [, , , , , temperature, thinking] = row;
+      const temperature = row[COLUMNS.indexOf('temperature')];
+      const thinking = row[COLUMNS.indexOf('thinking')];
       // The pairing is refused at load, so the matrix must not be able to build it.
       expect(temperature !== '' && thinking !== '').toBe(false);
     }

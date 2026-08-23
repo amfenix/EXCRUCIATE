@@ -15,6 +15,7 @@ export const COLUMNS = [
   'id',
   'enabled',
   'task',
+  'arm',
   'model',
   'surface',
   'temperature',

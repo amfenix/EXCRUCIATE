@@ -20,6 +20,8 @@ import { fileRefsOf } from '../episode/text.ts';
 import { Problems } from './parse.ts';
 import { parseResearch } from './meta.ts';
 import { parseTask } from './task.ts';
+import { readArms, render } from './arms.ts';
+import type { Arm } from './arms.ts';
 import { manifestFor, narrow } from '../surface/manifest.ts';
 import { readWorkbook } from './workbook.ts';
 import { ResearchError } from './types.ts';
@@ -37,6 +39,15 @@ export interface LoadedEpisode {
 }
 
 export interface LoadedResearch {
+  /**
+   * Every arm as it was actually resolved, keyed by `file#arm`.
+   *
+   * Written into a run's `inputs/tasks/` so the record stays LINEAR: the one
+   * real cost of rendering arms from an axis is that you can no longer read a
+   * file top to bottom and know what ran, and a resolved copy beside the results
+   * gives that back.
+   */
+  rendered: Map<string, string>;
   dir: string;
   meta: Research;
   /** Enabled rows only — but every row was validated. */
@@ -67,8 +78,8 @@ export async function loadResearch(dir: string, opts: LoadOptions = {}): Promise
   const { rows, experiments } = await readWorkbook(bookPath, p);
   if (!p.ok) throw new ResearchError(p.list);
 
-  const tasks = await readTasks(root, meta, rows, p);
-  const built = rows.map((row) => build(root, meta, row, tasks.get(row.task), p));
+  const { tasks, rendered } = await readTasks(root, meta, rows, p);
+  const built = rows.map((row) => build(root, meta, row, tasks.get(taskKey(row)), p));
 
   validateAll(built, p);
   await validateToolsets(built, p);
@@ -80,27 +91,70 @@ export async function loadResearch(dir: string, opts: LoadOptions = {}): Promise
     episodes: built.filter((b) => b.row.enabled),
     disabled: built.filter((b) => !b.row.enabled).map((b) => b.row),
     experiments,
+    rendered,
   };
 }
 
-/** Each task file is read once, however many rows point at it. */
+/**
+ * Each task file is read once, and RENDERED once per arm any row asks for.
+ *
+ * The key is `file#arm`, because two rows on the same file and different arms
+ * are two different tasks by the time the runner sees them — one with
+ * `reserved = 0` in its fixture and one with `reserved = 1200000`.
+ */
 async function readTasks(
   root: string,
   meta: Research,
   rows: EpisodeRow[],
   p: Problems
-): Promise<Map<string, Task>> {
+): Promise<{ tasks: Map<string, Task>; rendered: Map<string, string> }> {
   const tasks = new Map<string, Task>();
+  const rendered = new Map<string, string>();
+  const sources = new Map<string, { arms: Arm[]; body: string }>();
+
   for (const name of new Set(rows.map((r) => r.task).filter((t) => t !== ''))) {
     const path = resolve(root, meta.tasks, name);
     if (!existsSync(path)) {
       p.add(`task ${name}`, `not found at ${path}`);
       continue;
     }
-    tasks.set(name, parseTask(await Bun.file(path).text(), `task ${name}`, p));
+    sources.set(name, readArms(await Bun.file(path).text(), `task ${name}`, p));
   }
-  return tasks;
+
+  for (const row of rows) {
+    const src = sources.get(row.task);
+    if (src === undefined) continue;
+    const key = taskKey(row);
+    if (tasks.has(key)) continue;
+
+    const wanted = row.arm ?? '';
+    const arm = armFor(row, wanted, src.arms, p);
+    if (arm === null) continue;
+    const where = wanted === '' ? `task ${row.task}` : `task ${row.task} arm ${wanted}`;
+    const source = render(src.body, arm, where, p);
+    rendered.set(key, source);
+    tasks.set(key, parseTask(source, where, p, wanted));
+  }
+  return { tasks, rendered };
 }
+
+/** The arm this row asks for, or nothing and a reason naming what the file has. */
+function armFor(row: EpisodeRow, wanted: string, arms: Arm[], p: Problems): Arm | null {
+  const found = arms.find((a) => a.name === wanted);
+  if (found !== undefined) return found;
+  const names = arms.map((a) => a.name).filter((n) => n !== '');
+  const why =
+    wanted === ''
+      ? `names no arm, and ${row.task} declares arms (${names.join(', ')})`
+      : names.length === 0
+        ? `asks for arm "${wanted}", and ${row.task} declares no axis`
+        : `asks for arm "${wanted}", which ${row.task} does not have (${names.join(', ')})`;
+  p.add(`row ${row.id}`, why);
+  return null;
+}
+
+/** How a row addresses its task: the file, and which arm of it. */
+export const taskKey = (row: { task: string; arm?: string }): string => `${row.task}#${row.arm ?? ''}`;
 
 function build(
   root: string,
