@@ -183,6 +183,48 @@ describe('rendering an arm', () => {
     expect(said(p)).toContain('only "pence" exists');
   });
 
+  test('a value is taken as WRITTEN, not as YAML would type it', () => {
+    // `021000021` parses to the number 21000021 and the leading zero is gone —
+    // silently, into a payment instruction, in a case about whether the rail can
+    // carry the details it was given.
+    const { arms, p } = read(`axis:
+  destination:
+    us:
+      baseline: true
+      different: a payee the rail can reach as given
+      aba: 021000021
+      country: US
+      amount: 30000.00
+    japan:
+      different: a payee whose country needs a different destination type
+      aba: 000000000
+      country: JP
+      amount: 4800.50
+`);
+    expect(p.list).toEqual([]);
+    const us = arms.find((a) => a.name === 'us')!;
+    expect(render('{{destination.aba}}', us, 'w', p)).toBe('021000021');
+    expect(render('{{destination.country}}', us, 'w', p)).toBe('US');
+    // And the pence filter still reads it as the amount it is.
+    expect(render('{{destination.amount|pence}}', arms.find((a) => a.name === 'japan')!, 'w', p)).toBe('480050');
+    expect(p.list).toEqual([]);
+  });
+
+  test('quotes around a written value are not part of it', () => {
+    const { arms, p } = read(`axis:
+  d:
+    one:
+      baseline: true
+      different: a
+      code: '021000021'
+    two:
+      different: b
+      code: "0400"
+`);
+    expect(render('{{d.code}}', arms[0]!, 'w', p)).toBe('021000021');
+    expect(render('{{d.code}}', arms[1]!, 'w', p)).toBe('0400');
+  });
+
   test('templatesIn finds every field a body uses', () => {
     expect([...templatesIn('a {{f.one}} b {{f.two|pence}} c {{f.one}}')]).toEqual(['f.one', 'f.two']);
   });

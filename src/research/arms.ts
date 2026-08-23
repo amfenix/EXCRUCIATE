@@ -86,13 +86,93 @@ export function readArms(source: string, where: string, p: Problems): { arms: Ar
   const axis = axisOf(doc['axis'], where, p);
   if (axis === null) return { arms: [plain()], body: strip(source) };
 
+  const raw = rawValues(source);
   const arms: Arm[] = [];
   for (const [name, body] of Object.entries(axis.values)) {
-    const arm = armOf(name, body, axis.name, where, p);
+    const arm = armOf(name, body, axis.name, where, p, raw.get(name));
     if (arm !== null) arms.push(arm);
   }
   validate(arms, axis.name, where, p);
   return { arms, body: strip(source) };
+}
+
+/**
+ * Each arm's field values as they were WRITTEN, not as YAML typed them.
+ *
+ * `abaRoutingNumber: 021000021` parses to the number 21000021 and the leading
+ * zero is gone — silently, into a payment instruction, in a case about whether
+ * the rail can carry the details it was given. The same flattening turns
+ * `30000.00` into `30000`, which is harmless, and would turn a sort code or a
+ * reference beginning with a zero into a different string entirely, which is
+ * not.
+ *
+ * So the value is taken from the source line. Anything this cannot read — a
+ * folded or literal block, a nested mapping — falls back to the parsed value,
+ * which is where `claim:` and friends come from anyway.
+ */
+function rawValues(source: string): Map<string, Map<string, string>> {
+  const out = new Map<string, Map<string, string>>();
+  const block = axisBlock(source);
+  // Three depths matter and they are whatever the file indents by: the axis
+  // name, the arm names under it, the fields under those. Anything deeper is a
+  // `claim:` and is read from the parsed document instead.
+  const depths = [...new Set(block.map(indentOf))].sort((a, b) => a - b);
+  const armDepth = depths[1];
+  const fieldDepth = depths[2];
+  if (armDepth === undefined || fieldDepth === undefined) return out;
+
+  let arm: Map<string, string> | null = null;
+  for (const line of block) {
+    const depth = indentOf(line);
+    if (depth === armDepth) {
+      const name = /^\s*([A-Za-z0-9_-]+):\s*$/.exec(line)?.[1];
+      arm = name === undefined ? null : new Map();
+      if (arm !== null) out.set(name!, arm);
+    } else if (depth === fieldDepth && arm !== null) {
+      scalarField(line, arm);
+    }
+  }
+  return out;
+}
+
+const indentOf = (line: string): number => line.length - line.trimStart().length;
+
+/** The lines under `axis:`, without blanks or comments. */
+function axisBlock(source: string): string[] {
+  const lines = source.split('\n');
+  const start = lines.findIndex((l) => /^axis:/.test(l));
+  if (start < 0) return [];
+  const out: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (line.trim() === '' || /^\s*#/.test(line)) continue;
+    if (indentOf(line) === 0) break; // a new top-level key: the block is over
+    out.push(line);
+  }
+  return out;
+}
+
+/**
+ * One `key: value` line of an arm, taken verbatim.
+ *
+ * A folded or literal block, or a nested mapping, is left to the parsed document
+ * — which is where `claim:` comes from, and it needs no substitution.
+ */
+function scalarField(line: string, arm: Map<string, string>): void {
+  const m = /^\s*([A-Za-z0-9_-]+):[ \t]+(.*\S)\s*$/.exec(line);
+  if (m === null) return;
+  const [, key, value] = m as unknown as [string, string, string];
+  if (RESERVED.has(key)) return;
+  if (value.startsWith('|') || value.startsWith('>')) return;
+  arm.set(key, unquote(value));
+}
+
+/** `'x'` and `"x"` are the same as `x`; anything else is taken as written. */
+function unquote(value: string): string {
+  const first = value[0];
+  if ((first === '"' || first === "'") && value.endsWith(first) && value.length >= 2) {
+    return value.slice(1, -1);
+  }
+  return value;
 }
 
 function parseDoc(source: string): Record<string, unknown> | null {
@@ -140,7 +220,14 @@ function axisOf(
   return { name, values: values as Record<string, unknown> };
 }
 
-function armOf(name: string, body: unknown, axis: string, where: string, p: Problems): Arm | null {
+function armOf(
+  name: string,
+  body: unknown,
+  axis: string,
+  where: string,
+  p: Problems,
+  raw: Map<string, string> | undefined
+): Arm | null {
   const at = `${where} axis ${axis}.${name}`;
   if (FORBIDDEN.has(name)) {
     p.add(at, `"${name}" is a forecast key, so it cannot also name an arm`);
@@ -158,7 +245,7 @@ function armOf(name: string, body: unknown, axis: string, where: string, p: Prob
       p.add(`${at} ${k}`, 'must be a scalar — an arm supplies values, not structure');
       continue;
     }
-    values[k] = String(v);
+    values[k] = raw?.get(k) ?? String(v);
   }
   return {
     name,
