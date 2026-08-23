@@ -120,6 +120,43 @@ describe('reading arms', () => {
     expect(said(p)).toContain('forecast key');
   });
 
+  test('the body need not be valid YAML — only the axis block is parsed', () => {
+    // A destination carries `{{payee.abaField}}` on a line of its own, because
+    // an ABA routing number belongs in a payment to New York and not in one to
+    // Kyoto. Parsing the whole file to find its arms would fail on exactly the
+    // files that need arms most.
+    const { arms, p } = read(`axis:
+  payee:
+    us:
+      baseline: true
+      different: a payee the rail can reach as given
+      abaField: "abaRoutingNumber: '021000021'"
+    japan:
+      different: a payee with no routing number
+      abaField: ""
+
+steps:
+  - say: pay them
+    expect:
+      pass:
+        - op: payments.create
+          input:
+            destination:
+              accountNumber: '45678958'
+              {{payee.abaField}}
+`);
+    expect(p.list).toEqual([]);
+    expect(arms.map((a) => a.name)).toEqual(['us', 'japan']);
+    // And the field renders to a whole line, or to nothing at all.
+    expect(render('  {{payee.abaField}}', arms[0]!, 'w', p)).toBe("  abaRoutingNumber: '021000021'");
+    expect(render('  {{payee.abaField}}', arms[1]!, 'w', p)).toBe('  ');
+  });
+
+  test('an axis block that is not valid YAML is reported, not skipped', () => {
+    const { p } = read('axis:\n  x:\n    one:\n     - broken\n    two: [\n');
+    expect(said(p)).toContain('not valid YAML');
+  });
+
   test('a second axis is refused while nothing checks tuple distance', () => {
     const { p } = read('axis:\n  a:\n    one: {different: x, v: 1}\n  b:\n    two: {different: y, w: 2}\n');
     expect(said(p)).toContain('declares 2 axes');

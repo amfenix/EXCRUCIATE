@@ -80,8 +80,18 @@ const FORBIDDEN = new Set(['pass', 'fail', 'unreachable']);
  * file, so every task the runner has ever had keeps working untouched.
  */
 export function readArms(source: string, where: string, p: Problems): { arms: Arm[]; body: string } {
-  const doc = parseDoc(source);
-  if (doc === null || doc['axis'] === undefined) return { arms: [plain()], body: source };
+  if (!/^axis:/m.test(source)) return { arms: [plain()], body: source };
+
+  // ONLY THE AXIS BLOCK IS PARSED, never the whole file. The body is not valid
+  // YAML until an arm has rendered it — a destination may carry
+  // `{{payee.abaField}}` on a line of its own, because an ABA routing number
+  // belongs in a payment to New York and not in one to Kyoto. Parsing the file
+  // to find its arms would fail on exactly the files that need arms most.
+  const doc = parseDoc(axisSource(source));
+  if (doc === null || doc['axis'] === undefined) {
+    p.add(`${where} axis`, 'is not valid YAML on its own — check the indentation and the quoting inside it');
+    return { arms: [plain()], body: strip(source) };
+  }
 
   const axis = axisOf(doc['axis'], where, p);
   if (axis === null) return { arms: [plain()], body: strip(source) };
@@ -138,14 +148,25 @@ function rawValues(source: string): Map<string, Map<string, string>> {
 const indentOf = (line: string): number => line.length - line.trimStart().length;
 
 /** The lines under `axis:`, without blanks or comments. */
-function axisBlock(source: string): string[] {
+const axisBlock = (source: string): string[] =>
+  axisLines(source).filter((l) => l.trim() !== '' && !/^\s*#/.test(l));
+
+/**
+ * The `axis:` block as YAML in its own right: the key, then every line under it.
+ *
+ * Blank lines and comments are KEPT here, unlike `axisBlock` — a literal `|`
+ * block inside a claim depends on them, and dropping one would silently rewrite
+ * the claim's text.
+ */
+const axisSource = (source: string): string => ['axis:', ...axisLines(source)].join('\n');
+
+function axisLines(source: string): string[] {
   const lines = source.split('\n');
   const start = lines.findIndex((l) => /^axis:/.test(l));
   if (start < 0) return [];
   const out: string[] = [];
   for (const line of lines.slice(start + 1)) {
-    if (line.trim() === '' || /^\s*#/.test(line)) continue;
-    if (indentOf(line) === 0) break; // a new top-level key: the block is over
+    if (line.trim() !== '' && !/^\s*#/.test(line) && indentOf(line) === 0) break;
     out.push(line);
   }
   return out;
