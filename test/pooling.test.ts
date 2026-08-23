@@ -38,10 +38,12 @@ interface Ep {
   model: string;
   /** How many of this row's repetitions harmed, so a rate can be partial. */
   harmedReps: number;
+  /** How many completed. Defaults to all of them. */
+  doneReps?: number;
   reps?: number;
 }
 
-function episode(path: string, e: Ep, rep: number, harmed: boolean): void {
+function episode(path: string, e: Ep, rep: number, harmed: boolean, done: boolean): void {
   const db = new Database(path, { create: true });
   db.run(`
     CREATE TABLE _episode (
@@ -59,14 +61,14 @@ function episode(path: string, e: Ep, rep: number, harmed: boolean): void {
   db.run(
     `INSERT INTO _episode (id, model, surface, mode, memory, faults, void, harmed, completed,
        row, task, arm, notes, input_tokens, output_tokens, cached_tokens, reasoning_tokens, cost_usd)
-     VALUES (?, ?, 'tools', 'fn', 'session', 'none', NULL, ?, 1, ?, 'tc-fp-05.yaml', ?, '', 10, 1, 0, 0, 0.001)`,
-    [`${e.row}-${rep}`, e.model, harmed ? 1 : 0, e.row, e.arm]
+     VALUES (?, ?, 'tools', 'fn', 'session', 'none', NULL, ?, ?, ?, 'tc-fp-05.yaml', ?, '', 10, 1, 0, 0, 0.001)`,
+    [`${e.row}-${rep}`, e.model, harmed ? 1 : 0, done ? 1 : 0, e.row, e.arm]
   );
   db.run(`INSERT INTO _grade (name, axis, ok, evidence, sql) VALUES ('nothing parked', 'harm', ?, ?, 'x')`, [
     harmed ? 0 : 1,
     JSON.stringify({ parked: harmed ? 1 : 0 }),
   ]);
-  db.run(`INSERT INTO _grade (name, axis, ok, evidence, sql) VALUES ('paid', 'completion', 1, '{}', 'x')`);
+  db.run(`INSERT INTO _grade (name, axis, ok, evidence, sql) VALUES ('paid', 'completion', ?, '{}', 'x')`, [done ? 1 : 0]);
   db.close();
 }
 
@@ -78,7 +80,7 @@ function run(eps: Ep[], armsOverride?: unknown): string {
   mkdirSync(join(dir, 'inputs'), { recursive: true });
   for (const e of eps) {
     for (let rep = 1; rep <= (e.reps ?? 5); rep++) {
-      episode(join(dir, 'episodes', `${e.row}-${rep}.sqlite`), e, rep, rep <= e.harmedReps);
+      episode(join(dir, 'episodes', `${e.row}-${rep}.sqlite`), e, rep, rep <= e.harmedReps, rep <= (e.doneReps ?? (e.reps ?? 5)));
     }
   }
   const claims = {
@@ -162,6 +164,28 @@ describe('a claim carried by an arm', () => {
     expect(pooled.harm.control).toEqual(expect.objectContaining({ count: 6, n: 30 }));
     expect(pooled.harm.test).toEqual(expect.objectContaining({ count: 24, n: 30 }));
     expect(pooled.harm.separable).toBe(true);
+  });
+
+  test('completion is pooled and tested for separation too', () => {
+    // A trap that stops the job being done without breaking anything moves the
+    // completion axis and leaves harm flat. Seven of the corpus's twenty-one
+    // claims are that shape, and reading harm alone makes them look like
+    // nothing happened.
+    const models = ['a', 'b', 'c'];
+    const eps: Ep[] = models.flatMap((m) => [
+      { row: `fp05-${m}-none`, arm: 'none', model: m, harmedReps: 0, doneReps: 5 },
+      { row: `fp05-${m}`, arm: 'payroll', model: m, harmedReps: 0, doneReps: 0 },
+    ]);
+    const dir = run(eps);
+    const c = extract(dir, readClaims(dir)!).comparisons[0]!;
+
+    expect(c.harm.control?.count).toBe(0);
+    expect(c.harm.test?.count).toBe(0);
+    expect(c.harm.separable).toBe(false);
+
+    expect(c.completion.control).toEqual(expect.objectContaining({ count: 15, n: 15 }));
+    expect(c.completion.test).toEqual(expect.objectContaining({ count: 0, n: 15 }));
+    expect(c.completion.separable).toBe(true);
   });
 
   test('a model on only one side is dropped, and named', () => {

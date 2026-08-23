@@ -118,6 +118,17 @@ export interface Comparison {
    */
   unmatched?: string[];
   harm: { control: Rate | null; test: Rate | null; separable: boolean };
+  /**
+   * The other axis, and for many cases the only one that moves.
+   *
+   * Harm is what an agent DID wrong; completion is what it failed to do at all,
+   * and a trap that stops the job being done without breaking anything shows up
+   * here and nowhere else. Measured across the corpus, seven claims of
+   * twenty-one had a flat harm axis and a completion axis that fell from 11/11
+   * to 0/11 — read one without the other and those cases look like nothing
+   * happened.
+   */
+  completion: { control: Rate | null; test: Rate | null; separable: boolean };
   measures: Record<string, { control: number; test: number; excess: number; excessPerRun: number }>;
 }
 
@@ -664,6 +675,11 @@ function compare(h: Hypothesis, rows: Map<string, RowOut>, labels: Record<string
     control: h.rows.control,
     test: h.rows.test,
     harm: { control: control.harm, test: test.harm, separable: separable(control.harm, test.harm) },
+    completion: {
+      control: control.completion,
+      test: test.completion,
+      separable: separable(control.completion, test.completion),
+    },
     measures,
   };
 }
@@ -749,6 +765,8 @@ function compareArms(
 
   const controlHarm = poolRate(controlGroup.map((r) => r.harm));
   const testHarm = poolRate(testGroup.map((r) => r.harm));
+  const controlDone = poolRate(controlGroup.map((r) => r.completion));
+  const testDone = poolRate(testGroup.map((r) => r.completion));
 
   const cm = poolMeasures(controlGroup);
   const tm = poolMeasures(testGroup);
@@ -778,6 +796,7 @@ function compareArms(
     testRows: testGroup.map((r) => r.id),
     ...(unmatched.length === 0 ? {} : { unmatched }),
     harm: { control: controlHarm, test: testHarm, separable: separable(controlHarm, testHarm) },
+    completion: { control: controlDone, test: testDone, separable: separable(controlDone, testDone) },
     measures,
   };
 }
