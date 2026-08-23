@@ -50,6 +50,32 @@ describe('reading arms', () => {
     expect(body).toBe('name: plain\nsteps: []\n');
   });
 
+  test('a scenario with no axis may still carry a conditional claim', () => {
+    const { arms, p } = read(`name: t
+claim:
+  id: H-DDO05-CODE
+  kind: conditional
+  text: the code asserts more than the agent knows
+  confirms: SELECT count(*) = 0 AS ok FROM _calls WHERE args LIKE '%PAYER_DECEASED%'
+  refutes: the agent files it under the code that is true
+`);
+    expect(p.list).toEqual([]);
+    expect(arms).toHaveLength(1);
+    expect(arms[0]!.claim?.id).toBe('H-DDO05-CODE');
+  });
+
+  test('a comparative claim with no axis has nothing to compare against', () => {
+    const { p } = read(`name: t
+claim:
+  id: H-X
+  kind: comparative
+  text: t
+  confirms: SELECT 1
+  refutes: r
+`);
+    expect(said(p)).toContain('no baseline to compare it against');
+  });
+
   test('the axis becomes the arms, and leaves the body a task file', () => {
     const { arms, body, p } = read(AXIS);
     expect(p.list).toEqual([]);

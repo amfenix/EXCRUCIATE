@@ -44,7 +44,7 @@ export function parseTask(source: string, where: string, p: Problems, arm = ''):
   };
 
   for (const key of Object.keys(doc)) {
-    if (!['name', 'maxSteps', 'surfaces', 'tools', 'prompts', 'init', 'steps', 'grade'].includes(key)) {
+    if (!['name', 'maxSteps', 'surfaces', 'tools', 'prompts', 'init', 'steps', 'grade', 'claim'].includes(key)) {
       p.add(where, `unknown key "${key}"`);
     }
   }

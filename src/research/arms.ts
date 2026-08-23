@@ -80,7 +80,7 @@ const FORBIDDEN = new Set(['pass', 'fail', 'unreachable']);
  * file, so every task the runner has ever had keeps working untouched.
  */
 export function readArms(source: string, where: string, p: Problems): { arms: Arm[]; body: string } {
-  if (!/^axis:/m.test(source)) return { arms: [plain()], body: source };
+  if (!/^axis:/m.test(source)) return { arms: [soleArm(source, where, p)], body: source };
 
   // ONLY THE AXIS BLOCK IS PARSED, never the whole file. The body is not valid
   // YAML until an arm has rendered it — a destination may carry
@@ -329,6 +329,29 @@ function parseClaim(raw: unknown, where: string, p: Problems): Claim {
 }
 
 const plain = (): Arm => ({ name: '', axis: '', baseline: true, different: '', values: {} });
+
+/**
+ * A scenario with no axis: one nameless arm, which may still carry a claim.
+ *
+ * COMPARATIVE CLAIMS NEED AN AXIS and conditional ones do not. "Of the episodes
+ * that cancelled a mandate, how many filed it under a code that was not true" is
+ * a rate inside one world, and inventing a second arm for it produces the thing
+ * `H-DDO04-CODE` used to be: a control that reads zero for a reason unrelated to
+ * the claim, which makes the comparison look separable whatever happens.
+ */
+function soleArm(source: string, where: string, p: Problems): Arm {
+  const arm = plain();
+  const doc = parseDoc(source);
+  if (doc === null || doc['claim'] === undefined) return arm;
+  const claim = parseClaim(doc['claim'], `${where} claim`, p);
+  if (claim.kind === 'comparative') {
+    p.add(
+      `${where} claim`,
+      `"${claim.id}" is comparative and this file declares no axis, so there is no baseline to compare it against`
+    );
+  }
+  return { ...arm, claim };
+}
 
 /**
  * Remove the `axis:` block from the source, leaving the body a task file.
