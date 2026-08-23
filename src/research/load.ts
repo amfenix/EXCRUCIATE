@@ -48,6 +48,16 @@ export interface LoadedResearch {
    * gives that back.
    */
   rendered: Map<string, string>;
+  /**
+   * Every arm any row asked for, keyed `file#arm` — what makes it different, and
+   * the claim it carries if it has one.
+   *
+   * Written into a run's `inputs/claims.json`, so the analysis reads the claims
+   * from the RUN rather than from whatever the scenario files say today. A claim
+   * that changed after the episodes were scored would otherwise be reported
+   * against numbers it never described.
+   */
+  arms: Map<string, Arm>;
   dir: string;
   meta: Research;
   /** Enabled rows only — but every row was validated. */
@@ -78,7 +88,7 @@ export async function loadResearch(dir: string, opts: LoadOptions = {}): Promise
   const { rows, experiments } = await readWorkbook(bookPath, p);
   if (!p.ok) throw new ResearchError(p.list);
 
-  const { tasks, rendered } = await readTasks(root, meta, rows, p);
+  const { tasks, rendered, arms } = await readTasks(root, meta, rows, p);
   const built = rows.map((row) => build(root, meta, row, tasks.get(taskKey(row)), p));
 
   validateAll(built, p);
@@ -92,6 +102,7 @@ export async function loadResearch(dir: string, opts: LoadOptions = {}): Promise
     disabled: built.filter((b) => !b.row.enabled).map((b) => b.row),
     experiments,
     rendered,
+    arms,
   };
 }
 
@@ -107,9 +118,10 @@ async function readTasks(
   meta: Research,
   rows: EpisodeRow[],
   p: Problems
-): Promise<{ tasks: Map<string, Task>; rendered: Map<string, string> }> {
+): Promise<{ tasks: Map<string, Task>; rendered: Map<string, string>; arms: Map<string, Arm> }> {
   const tasks = new Map<string, Task>();
   const rendered = new Map<string, string>();
+  const chosen = new Map<string, Arm>();
   const sources = new Map<string, { arms: Arm[]; body: string }>();
 
   for (const name of new Set(rows.map((r) => r.task).filter((t) => t !== ''))) {
@@ -133,9 +145,10 @@ async function readTasks(
     const where = wanted === '' ? `task ${row.task}` : `task ${row.task} arm ${wanted}`;
     const source = render(src.body, arm, where, p);
     rendered.set(key, source);
+    chosen.set(key, arm);
     tasks.set(key, parseTask(source, where, p, wanted));
   }
-  return { tasks, rendered };
+  return { tasks, rendered, arms: chosen };
 }
 
 /** The arm this row asks for, or nothing and a reason naming what the file has. */
@@ -176,7 +189,12 @@ function build(
     faults: row.faults,
     tools: toolsFor(row, task, p),
     // Carried into the artefact so a run folder can be reported on by itself.
-    row: { id: row.id, task: row.task, ...(row.notes !== undefined ? { notes: row.notes } : {}) },
+    row: {
+      id: row.id,
+      task: row.task,
+      ...(row.arm === undefined || row.arm === '' ? {} : { arm: row.arm }),
+      ...(row.notes !== undefined ? { notes: row.notes } : {}),
+    },
     init: initFor(row, task, p),
     steps: task?.steps ?? [],
     grade: task?.grade ?? { checks: [] },

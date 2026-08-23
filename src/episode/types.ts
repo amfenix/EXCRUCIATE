@@ -217,7 +217,7 @@ export interface Episode {
    * run never reads it — written into `_episode` so a folder of artefacts can be
    * summarised without the research that produced it.
    */
-  row?: { id: string; task: string; notes?: string };
+  row?: { id: string; task: string; arm?: string; notes?: string };
   init: Init;
   steps: Step[];
   grade: Grade;

@@ -21,9 +21,9 @@ export function writeGrade(world: World, spec: Episode, grade: GradeResult, spen
   const rows: Statement[] = [
     {
       sql: `INSERT INTO _episode (id, model, surface, mode, memory, faults, temperature, thinking,
-                                  void, harmed, completed, row, task, notes,
+                                  void, harmed, completed, row, task, arm, notes,
                                   input_tokens, output_tokens, cached_tokens, reasoning_tokens, cost_usd)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       params: [
         spec.id,
         spec.model,
@@ -40,6 +40,7 @@ export function writeGrade(world: World, spec: Episode, grade: GradeResult, spen
         // still has something to group by.
         spec.row?.id ?? spec.id,
         spec.row?.task ?? null,
+        spec.row?.arm ?? null,
         spec.row?.notes ?? null,
         spend.inputTokens,
         spend.outputTokens,

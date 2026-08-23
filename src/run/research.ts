@@ -426,7 +426,44 @@ function makeRunFolder(loaded: LoadedResearch, resume: boolean, experiment?: str
       writeFileSync(resolve(dir, 'inputs', 'tasks', name), source);
     }
   }
+  writeClaims(dir, loaded);
   return dir;
+}
+
+/**
+ * `inputs/claims.json`: every arm this run touched, what makes it different, and
+ * the claim it carries.
+ *
+ * The analysis reads claims from HERE and not from the scenario files, because a
+ * claim edited after the episodes were scored would otherwise be reported
+ * against numbers it never described. Rows are listed with their co-ordinates so
+ * a control and a test can be paired on everything except the arm.
+ */
+function writeClaims(dir: string, loaded: LoadedResearch): void {
+  if (loaded.arms.size === 0) return;
+  const arms = [...loaded.arms].map(([key, arm]) => {
+    const [task = '', name = ''] = key.split('#');
+    return {
+      task,
+      arm: name,
+      baseline: arm.baseline,
+      different: arm.different,
+      ...(arm.claim === undefined ? {} : { claim: arm.claim }),
+    };
+  });
+  const rows = loaded.episodes.map(({ row }) => ({
+    id: row.id,
+    task: row.task,
+    arm: row.arm ?? '',
+    model: row.model,
+    surface: row.surface ?? loaded.meta.surface,
+    memory: row.memory,
+    faults: Array.isArray(row.faults) ? [...row.faults].sort().join(',') : row.faults,
+    temperature: row.temperature ?? null,
+    toolset: row.toolset ?? null,
+  }));
+  writeFileSync(resolve(dir, 'inputs', 'claims.json'), `${JSON.stringify({ arms, rows }, null, 2)}
+`);
 }
 
 function latestRun(parent: string, experiment?: string): string | null {

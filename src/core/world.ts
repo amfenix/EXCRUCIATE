@@ -82,7 +82,7 @@ CREATE TABLE _episode (
   -- Provenance: which workbook row this is a repetition of, and what the author
   -- called it. Nothing in the run reads these; they are here so a folder of
   -- artefacts can be reported on years later with the research long gone.
-  row TEXT, task TEXT, notes TEXT,
+  row TEXT, task TEXT, arm TEXT, notes TEXT,
   -- This repetition's total spend, summed over its say-steps.
   input_tokens INTEGER, output_tokens INTEGER, cached_tokens INTEGER,
   reasoning_tokens INTEGER, cost_usd REAL
