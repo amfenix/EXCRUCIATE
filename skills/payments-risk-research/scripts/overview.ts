@@ -26,7 +26,7 @@ interface Arm {
   name: string;
   baseline: boolean;
   different: string;
-  claim?: { id: string; kind: string };
+  claim?: { id: string; kind: string; text: string; refutes: string };
 }
 
 interface Scenario {
@@ -34,6 +34,9 @@ interface Scenario {
   catalogue: string[];
   arms: Arm[];
 }
+
+/** A folded block arrives with its line breaks; a cell wants one paragraph. */
+const prose = (v: unknown): string => String(v ?? '').replace(/\s+/g, ' ').trim();
 
 const yaml = (s: string): unknown => (Bun as unknown as { YAML: { parse(t: string): unknown } }).YAML.parse(s);
 
@@ -71,19 +74,31 @@ function armsOf(src: string): Arm[] {
   const block = axisSource(src);
   if (block === null) {
     const doc = yaml(src) as Record<string, unknown> | null;
-    const claim = doc?.['claim'] as { id: string; kind: string } | undefined;
+    const c = doc?.['claim'] as Arm['claim'];
+    const claim = c === undefined
+      ? undefined
+      : { id: c.id, kind: c.kind, text: prose(c.text), refutes: prose(c.refutes) };
     return [{ name: '', baseline: true, different: '', ...(claim ? { claim } : {}) }];
   }
   const doc = yaml(block) as { axis?: Record<string, Record<string, Record<string, unknown>>> };
   const out: Arm[] = [];
   for (const values of Object.values(doc.axis ?? {})) {
     for (const [name, body] of Object.entries(values)) {
-      const claim = body['claim'] as { id: string; kind: string } | undefined;
+      const claim = body['claim'] as Arm['claim'];
       out.push({
         name,
         baseline: body['baseline'] === true,
         different: String(body['different'] ?? ''),
-        ...(claim ? { claim: { id: claim.id, kind: claim.kind } } : {}),
+        ...(claim
+          ? {
+              claim: {
+                id: claim.id,
+                kind: claim.kind,
+                text: prose(claim.text),
+                refutes: prose(claim.refutes),
+              },
+            }
+          : {}),
       });
     }
   }
@@ -113,8 +128,11 @@ async function readRows(dir: string): Promise<Map<string, Where>> {
   return out;
 }
 
-async function readMethods(dir: string): Promise<Map<string, string>> {
-  const out = new Map<string, string>();
+interface CaseInfo { method: string; job: string; decision: string; harm: string }
+
+/** What `cases.xlsx` says a case IS, in the words a non-engineer reads. */
+async function readCases(dir: string): Promise<Map<string, CaseInfo>> {
+  const out = new Map<string, CaseInfo>();
   const path = resolve(dir, 'cases.xlsx');
   if (!existsSync(path)) return out;
   const wb = new ExcelJS.Workbook();
@@ -123,10 +141,16 @@ async function readMethods(dir: string): Promise<Map<string, string>> {
   if (ws === undefined) return out;
   const head: string[] = [];
   ws.getRow(1).eachCell((c, i) => (head[i - 1] = String(c.value ?? '').trim()));
-  const col = head.indexOf('method') + 1;
+  const at = (n: string) => head.indexOf(n) + 1;
+  const cell = (r: ExcelJS.Row, n: string) => (at(n) === 0 ? '' : prose(r.getCell(at(n)).value));
   ws.eachRow((r, i) => {
     if (i === 1) return;
-    out.set(String(r.getCell(1).value ?? '').trim(), String(r.getCell(col).value ?? '').trim());
+    out.set(String(r.getCell(1).value ?? '').trim(), {
+      method: cell(r, 'method'),
+      job: cell(r, 'business task given to the agent'),
+      decision: cell(r, 'decision point'),
+      harm: cell(r, 'harm predicate'),
+    });
   });
   return out;
 }
@@ -216,7 +240,11 @@ function sheet(wb: ExcelJS.Workbook, name: string): ExcelJS.Worksheet {
     { key: 'h', width: 7 },
     { key: 'i', width: 9 },
     { key: 'j', width: 11 },
-    { key: 'k', width: 78 },
+    { key: 'k', width: 62 },
+    { key: 'l', width: 52 },
+    { key: 'm', width: 62 },
+    { key: 'n', width: 76 },
+    { key: 'o', width: 62 },
   ];
   return ws;
 }
@@ -233,7 +261,11 @@ function header(ws: ExcelJS.Worksheet, title: string, subtitle: string): void {
   const h = ws.addRow([
     'Payment system', 'Case', 'Arm', 'Claim', 'Catalogue',
     'Rows', 'Episodes', 'Runs', 'Harm', 'Completed',
+    'The job the operator asks for',
+    'What counts as harm',
     'What this arm changes',
+    'What we are trying to prove',
+    'What would refute it',
   ]);
   h.font = { bold: true, size: 10, color: { argb: INK } };
   h.eachCell((c) => {
@@ -241,7 +273,8 @@ function header(ws: ExcelJS.Worksheet, title: string, subtitle: string): void {
     c.alignment = { vertical: 'bottom' };
   });
   for (const i of [6, 7, 8, 9, 10]) h.getCell(i).alignment = { horizontal: 'right', vertical: 'bottom' };
-  ws.views = [{ state: 'frozen', ySplit: h.number }];
+  // The prose columns are far right; the tree has to stay in view beside them.
+  ws.views = [{ state: 'frozen', xSplit: 3, ySplit: h.number }];
 }
 
 /** The method band: a payment system, and everything under it. */
@@ -255,14 +288,19 @@ function methodRow(ws: ExcelJS.Worksheet, method: string): void {
   });
 }
 
-function caseRow(ws: ExcelJS.Worksheet, id: string, catalogue: string[]): void {
-  const c = ws.addRow(['', id, '', '', catalogue.join(' ')]);
+function caseRow(ws: ExcelJS.Worksheet, id: string, catalogue: string[], info: CaseInfo | undefined): void {
+  const c = ws.addRow([
+    '', id, '', '', catalogue.join(' '), '', '', '', '', '',
+    info?.job ?? '',
+    info?.harm ?? '',
+  ]);
   c.font = { bold: true, size: 10, color: { argb: INK } };
   c.getCell(5).font = { size: 9, color: { argb: QUIET } };
   c.outlineLevel = 1;
   c.eachCell({ includeEmpty: true }, (cell) => {
     cell.border = { top: { style: 'hair', color: { argb: RULE } } };
   });
+  paintProse(c, [11, 12]);
 }
 
 /**
@@ -311,32 +349,55 @@ function armRow(ws: ExcelJS.Worksheet, arm: Arm, planned: number, t: Tally | und
     t?.runs.size ?? 0,
     rate(t?.harm ?? 0, t?.harmN ?? 0),
     rate(t?.done ?? 0, t?.doneN ?? 0),
+    '',
+    '',
     arm.different,
+    arm.claim?.text ?? '',
+    arm.claim?.refutes ?? '',
   ]);
   r.outlineLevel = 2;
   r.font = { size: 10, color: { argb: INK } };
   r.getCell(3).font = { size: 10, color: { argb: INK }, italic: arm.baseline };
   r.getCell(4).font = { size: 9, color: { argb: arm.claim ? INK : QUIET } };
-  r.getCell(11).font = { size: 9, color: { argb: QUIET } };
-
-  for (const i of [6, 7, 8]) {
-    r.getCell(i).alignment = { horizontal: 'right' };
-    r.getCell(i).font = { size: 10, color: { argb: r.getCell(i).value === 0 ? QUIET : INK } };
-  }
+  paintProse(r, [13, 14, 15]);
+  paintCounts(r);
   paintRate(r.getCell(9), 'harm');
   paintRate(r.getCell(10), 'done');
 }
 
+/** Rows, episodes and runs: grey at zero, so an arm nothing has run reads as one. */
+function paintCounts(r: ExcelJS.Row): void {
+  for (const i of [6, 7, 8]) {
+    r.getCell(i).alignment = { horizontal: 'right' };
+    r.getCell(i).font = { size: 10, color: { argb: r.getCell(i).value === 0 ? QUIET : INK } };
+  }
+}
+
+/**
+ * The prose columns, wrapped so they can be read rather than hovered.
+ *
+ * "What we are trying to prove" is the one a reader is here for, so it alone is
+ * full-strength; the rest is supporting context and stays quiet.
+ */
+function paintProse(r: ExcelJS.Row, cells: number[]): void {
+  for (const i of cells) {
+    r.getCell(i).font = { size: 9, color: { argb: i === 14 ? INK : QUIET } };
+    r.getCell(i).alignment = { wrapText: true, vertical: 'top' };
+  }
+}
+
 function footer(
   ws: ExcelJS.Worksheet,
-  cases: number,
+  caseCount: number,
   arms: number,
   rows: number,
   episodes: number,
   orphans: Map<string, number>
 ): void {
   ws.addRow([]);
-  const total = ws.addRow(['', '', '', '', '', rows, episodes, '', '', '', `${cases} cases · ${arms} arms`]);
+  const total = ws.addRow([
+    '', '', '', '', '', rows, episodes, '', '', '', `${caseCount} cases · ${arms} arms`,
+  ]);
   total.font = { bold: true, size: 10, color: { argb: INK } };
   total.getCell(6).alignment = { horizontal: 'right' };
   total.getCell(7).alignment = { horizontal: 'right' };
@@ -352,31 +413,43 @@ function footer(
     '', '', '', '', '', '', '', '', '', '',
     `${n} episodes on ${orphans.size} row ids the workbook no longer has, attributed to nothing: ${[...orphans.keys()].sort().join(', ')}`,
   ]);
+  o.getCell(11).alignment = { wrapText: false };
   o.font = { size: 9, italic: true, color: { argb: WARN } };
 }
 
 /**
  * Row ids that were renamed, so their history follows them.
  *
- * A row id is an address, and these two moved: TC-DDO-04's cancellation arm
- * became TC-DDO-05 when the case split on its instruction, and TC-DDO-01's rows
- * gained an arm suffix when its three worlds became arms of one scenario. The
- * episodes behind them measured the same thing before and after, so folding
- * them onto the new address recovers real history rather than inventing it.
+ * An id is an address, and the arms refactor moved most of them: a row that used
+ * to be `fp05-sonnet5-clear` now says what it runs, `fp05-sonnet5-none`. The
+ * episodes behind the old name measured the same thing, so folding them onto the
+ * new address recovers real history rather than inventing it.
  *
- * Rows that were DELETED are deliberately not aliased anywhere. They show up in
- * the footer as episodes attributed to nothing, which is what they are.
+ * `results/renamed-rows.json` is written by whatever does the renaming and is
+ * the authority; the two patterns below predate it. Rows that were DELETED are
+ * deliberately not aliased anywhere — they appear in the footer as episodes
+ * attributed to nothing, which is what they are.
  */
-const alias = (id: string): string =>
-  id
-    .replace(/^ddo04-([a-z0-9]+)-cancel$/, 'ddo05-$1')
-    .replace(/^ddo01-([a-z0-9]+)$/, 'ddo01-$1-late');
+function aliasing(dir: string): (id: string) => string {
+  const path = resolve(dir, 'results', 'renamed-rows.json');
+  const table: Record<string, string> = existsSync(path)
+    ? (JSON.parse(readFileSync(path, 'utf8')) as Record<string, string>)
+    : {};
+  return (id: string) => {
+    const renamed = table[id];
+    if (renamed !== undefined) return renamed;
+    const patterned = id
+      .replace(/^ddo04-([a-z0-9]+)-cancel$/, 'ddo05-$1')
+      .replace(/^ddo01-([a-z0-9]+)$/, 'ddo01-$1-late');
+    return table[patterned] ?? patterned;
+  };
+}
 
 export async function overview(dir: string, out: string): Promise<{ arms: number; episodes: number }> {
   const scenarios = readScenarios(dir);
   const rows = await readRows(dir);
-  const methods = await readMethods(dir);
-  const { seen, orphans } = readRuns(dir, rows, alias);
+  const cases = await readCases(dir);
+  const { seen, orphans } = readRuns(dir, rows, aliasing(dir));
 
   const planned = new Map<string, number>();
   for (const w of rows.values()) {
@@ -387,7 +460,7 @@ export async function overview(dir: string, out: string): Promise<{ arms: number
   const caseOf = (file: string) => file.replace(/\.yaml$/, '').toUpperCase();
   const byMethod = new Map<string, Scenario[]>();
   for (const s of scenarios) {
-    const m = methods.get(caseOf(s.file)) ?? '(no case row)';
+    const m = cases.get(caseOf(s.file))?.method ?? '(no case row)';
     if (!byMethod.has(m)) byMethod.set(m, []);
     byMethod.get(m)!.push(s);
   }
@@ -406,7 +479,7 @@ export async function overview(dir: string, out: string): Promise<{ arms: number
   for (const [method, list] of [...byMethod].sort()) {
     methodRow(ws, method);
     for (const s of [...list].sort((a, b) => a.file.localeCompare(b.file))) {
-      caseRow(ws, caseOf(s.file), s.catalogue);
+      caseRow(ws, caseOf(s.file), s.catalogue, cases.get(caseOf(s.file)));
       for (const arm of s.arms) {
         const key = `${s.file}#${arm.name}`;
         const t = seen.get(key);

@@ -134,6 +134,11 @@ function findingsSheet(wb: ExcelJS.Workbook, data: Dataset, m: Money): void {
  * A separate sheet because a condition on its own is a number: what a reader
  * should carry away is the difference from the control, and whether the
  * intervals allow it to be called a difference at all.
+ *
+ * BOTH AXES, ALWAYS. A trap that stops the job being done without breaking
+ * anything moves completion and leaves harm flat — seven of this corpus's
+ * twenty-one claims are that shape, and a sheet showing harm alone reports them
+ * as "no — intervals overlap" while completion runs 11 of 11 down to 0 of 11.
  */
 function comparisonSheet(wb: ExcelJS.Workbook, data: Dataset, m: Money): void {
   if (data.comparisons.length === 0) return;
@@ -145,7 +150,10 @@ function comparisonSheet(wb: ExcelJS.Workbook, data: Dataset, m: Money): void {
     'condition',
     'control harmed',
     'condition harmed',
-    'separable at this N?',
+    'harm separable?',
+    'control completed',
+    'condition completed',
+    'completion separable?',
     ...(m.measure === undefined ? [] : ['excess per run', 'excess total']),
     'control row',
     'condition row',
@@ -160,6 +168,9 @@ function comparisonSheet(wb: ExcelJS.Workbook, data: Dataset, m: Money): void {
       counted(c.harm.control),
       counted(c.harm.test),
       c.harm.separable ? 'yes' : 'no — intervals overlap',
+      counted(c.completion.control),
+      counted(c.completion.test),
+      c.completion.separable ? 'yes' : 'no — intervals overlap',
       ...moneyCells(m, excess?.excessPerRun),
       ...moneyCells(m, excess?.excess),
       c.control,
@@ -168,7 +179,7 @@ function comparisonSheet(wb: ExcelJS.Workbook, data: Dataset, m: Money): void {
   }
 
   bold(sheet);
-  widths(sheet, [12, 46, 30, 15, 17, 22, 15, 14, 26, 26]);
+  widths(sheet, [12, 46, 30, 15, 17, 18, 17, 19, 21, 15, 14, 26, 26]);
 }
 
 /** One row per repetition: the way in to a single run. */
