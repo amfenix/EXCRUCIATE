@@ -87,31 +87,56 @@ The control is **not** always "no fault injected":
 | reasoning | the failure, thinking off | the failure, thinking on |
 | a model | the failure on model A | the failure on model B |
 
-A row is therefore one hypothesis's control and another's test — which is why the
-business labels in `hypotheses.yaml` belong to the **rows**, under `rows:`, and
-never to a role.
+A row is therefore one hypothesis's control and another's test — which is why a
+label belongs to the **row**, and never to a role.
+
+**The control is an arm of the same scenario, not a second task file.** See
+`references/arms.md`; the rest of this page assumes it.
 
 ---
 
 ## 3. Choose N from the claim you intend to make
 
-| N per row | what it can support |
-|---|---|
-| 5 | "always" versus "never", and nothing finer. `0 of 5` is consistent with a true rate of 43% |
-| 20 | "roughly a quarter of the time" |
-| 50+ | a rate quoted to the percentage point |
+A claim carried by an arm pools every model in the run, so **n per arm is
+`models x repeat`** and not `repeat`:
 
-Compute the cost before committing: `excruciate run <dir> --dry` prices the whole
-matrix. Doubling N doubles the bill and narrows the interval by about a third —
-that trade is the human's to make, so put both numbers in front of them.
+| repeat | n per arm (11 models) | what it can support |
+|---|---|---|
+| 1 | 11 | "always" versus "never", and only if the effect is total |
+| 5 | 55 | a gap of 14 points or more |
+| 20 | 220 | a gap of 4 points |
+| 100 | 1,100 | a gap of 1 point |
+
+Measured on this corpus, within-model behaviour is close to deterministic — most
+arms had every model give an identical result, and where models differed they
+differed totally. Repetitions past about 20 therefore buy precision on a number
+that is already 0 or 1. **Between-model variance is where the signal is**: eleven
+models at 2 repetitions is a stronger instrument than one model at 15, and costs
+a third as much.
+
+Compute the cost before committing: `excruciate run <dir> --experiment <n> --dry`
+prices it. The projection is deliberately pessimistic — measured against real
+runs it comes out about 3x actual — so read it as a ceiling, not a bill.
 
 ---
 
-## 4. Write the task
+## 4. Write the scenario
 
-One task file per scenario. Everything that varies across conditions belongs in
-the workbook, not here — the point of the split is that one task serves every
-comparison you want to draw from it.
+**One file per scenario, and the conditions are arms of it.** What varies across
+arms is declared once in an `axis:` block and rendered into the file with
+`{{axis.field}}`; what varies across models, surfaces and faults stays in the
+workbook. Copying a task file and editing it is the thing this replaces —
+`references/arms.md` is the full format and the reasoning behind it.
+
+The essentials:
+
+- one axis, one `baseline: true` arm, every arm naming what it `different:`-ly
+  changes
+- a claim sits **on the arm it is about**, `comparative` against the baseline or
+  `conditional` within itself
+- an arm changes what the world contains, never what the operator wants — a
+  different instruction is a different scenario
+- both arms grade the same checks, under the same names
 
 **A scaffold is not a task.** `excruciate init` writes a worked example — rent,
 a landlord, an account named in the abstract — as a shape to follow, and it knows
@@ -181,8 +206,13 @@ a clean result.
 ## 5. Write the workbook
 
 One row per condition, plus its control. Columns the runner understands: `id`,
-`enabled`, `task`, `model`, `surface`, `temperature`, `thinking`, `memory`,
-`resetTools`, `parallelToolCalls`, `faults`, `repeat`, `fixture`, `notes`.
+`enabled`, `task`, **`arm`**, `model`, `surface`, `temperature`, `thinking`,
+`memory`, `resetTools`, `parallelToolCalls`, `faults`, `repeat`, `fixture`,
+`notes`.
+
+`arm` names which arm of the task's axis the row runs, and is blank only for a
+scenario that declares no axis. A row that names an arm the scenario does not
+have is refused at load, with the arms it does have listed.
 
 Two conventions carry the business meaning through to the results:
 
@@ -220,12 +250,17 @@ prompt here that the task no longer contains is the same error in miniature.
 
 ---
 
-## 6. Write `hypotheses.yaml`
+## 6. The claims are already written
 
-`assets/hypotheses.template.yaml` is the annotated skeleton;
-`assets/hypotheses.demo.yaml` is a filled-in one for a real research. Two keys:
-`rows:` (the vocabulary, one entry per workbook row) and `hypotheses:` (the
-claims).
+They went on their arms in step 4, which is the whole point: **nothing names a
+workbook row**, so adding a twelfth model changes no claim anywhere. The runner
+writes them into `inputs/claims.json` in every run and the analysis reads them
+from there.
+
+`hypotheses.yaml` still exists and still works — `extract.ts --hypotheses <file>`
+uses it in preference — but it is for **claims about specific rows**, which in
+practice means a study whose question is a comparison *between models*. New
+case-level claims do not belong in it.
 
 The `impact:` query is the part people leave out, and it is the one a business
 reader looks at first. Harm rates say *how often*; impact says *how much*:
@@ -247,9 +282,14 @@ effects from the fixture's own.
 
 ```sh
 bun scripts/registered.ts <dir>   # is every task and row described in cases.xlsx?
+bun scripts/overview.ts <dir>     # every case, arm, claim and episode, in one workbook
 excruciate check <dir>            # every error at once; costs nothing
 excruciate run <dir> --dry        # the quote, per row, against the budget
 ```
+
+`overview.ts` is the one to read before deciding what to spend: it shows which
+arms have never run, which claims have no baseline to compare against, and which
+pairs already separate.
 
 `registered.ts` catches the drift between what runs and what is written down: a
 task nobody described, a row nobody explained, conditions still describing the
@@ -265,4 +305,5 @@ their decision, not yours.
 
 ---
 
-Next: `grading.md` for the SQL, `faults.md` for which failure to inject.
+Next: `arms.md` for the scenario format, `grading.md` for the SQL, `faults.md`
+for which failure to inject.

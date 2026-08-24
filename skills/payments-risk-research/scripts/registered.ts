@@ -41,11 +41,6 @@ interface Sheet {
   rows: string[][];
 }
 
-const yaml = (path: string): Record<string, unknown> =>
-  (Bun as unknown as { YAML: { parse(s: string): unknown } }).YAML.parse(
-    readFileSync(path, 'utf8')
-  ) as Record<string, unknown>;
-
 /** `TC-FP-02` out of `TC-FP-02 — funding the account fires…`, else null. */
 const caseIdOf = (taskName: string): string | null =>
   /^\s*([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+)/.exec(taskName)?.[1] ?? null;
@@ -85,6 +80,19 @@ function unregisteredRows(live: string[][], idC: number, described: Set<string>)
     }));
 }
 
+/**
+ * A scenario's `name:`, read from the SOURCE rather than from a parse.
+ *
+ * A task body is not valid YAML until an arm renders it — a destination may
+ * carry `{{payee.abaField}}` on a line of its own, because an ABA routing number
+ * belongs in a payment to New York and not in one to Kyoto. Parsing the file to
+ * find its name would throw on exactly the scenarios that have arms.
+ */
+function taskName(path: string): string {
+  const src = readFileSync(path, 'utf8');
+  return (/^name:[^\S\n]+(.*\S)\s*$/m.exec(src)?.[1] ?? '').replace(/^['"]|['"]$/g, '');
+}
+
 /** One task, resolved to the case id it claims. */
 function taskProblem(task: string, usedBy: string, tasksDir: string, cases: Set<string>): Problem | null {
   const taskPath = resolve(tasksDir, task);
@@ -92,7 +100,7 @@ function taskProblem(task: string, usedBy: string, tasksDir: string, cases: Set<
     return { where: task, message: `is referenced by ${usedBy} but does not exist in tasks/` };
   }
 
-  const name = String(yaml(taskPath)['name'] ?? '');
+  const name = taskName(taskPath);
   if (name === '') {
     return { where: task, message: 'has no `name:` — a task nobody can name is a task nobody described' };
   }
