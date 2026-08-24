@@ -65,7 +65,10 @@ function spellings(value: number): number[] {
  */
 function numbersIn(value: unknown, into: Set<number>): void {
   if (typeof value === 'string') {
-    for (const m of value.matchAll(/-?\d[\d,]*(?:\.\d+)?/g)) {
+    // NO LEADING SIGN when reading a string: a hyphen inside `gemini-2.5-pro`
+    // or `2026-08-24` is punctuation, and reading it as a minus collects -2.5
+    // for a page that prints 2.5.
+    for (const m of value.matchAll(/\d[\d,]*(?:\.\d+)?/g)) {
       const n = Number(m[0].replace(/,/g, ''));
       if (Number.isFinite(n)) into.add(n);
     }
@@ -148,6 +151,11 @@ function visibleText(html: string): string {
 function identifier(text: string, at: number, length: number): boolean {
   const before = text.slice(Math.max(0, at - 1), at);
   const after = text.slice(at + length, at + length + 1);
+  // A HYPHEN BETWEEN TWO DIGIT GROUPS JOINS THEM, it does not negate the second.
+  // Without this the last element of a sort code `04-13-07` or a date
+  // `2026-08-18` escapes as -7 and -18 — numbers nobody wrote and nobody can
+  // correct, which is how a reader learns to ignore this tool.
+  if (text[at] === '-' && /\d/.test(before)) return true;
   return /[A-Za-z\-:/]/.test(before) || /[A-Za-z\-:/]/.test(after);
 }
 
