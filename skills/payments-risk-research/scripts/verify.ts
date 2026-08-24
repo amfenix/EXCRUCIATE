@@ -53,8 +53,24 @@ function spellings(value: number): number[] {
   return [...out];
 }
 
-/** Every number in the dataset, whatever its depth. */
+/**
+ * Every number in the dataset, whatever its depth — including the ones written
+ * INSIDE its strings.
+ *
+ * A claim registered as "the rail answers 201 with an id and the payment is
+ * ER_INVALID" puts a 201 in the report the moment the report quotes the claim.
+ * That figure was not typed by hand; it was carried from the dataset, and
+ * flagging it teaches an author to reach for `--allow` as a matter of routine —
+ * which is the one habit this whole check exists to prevent.
+ */
 function numbersIn(value: unknown, into: Set<number>): void {
+  if (typeof value === 'string') {
+    for (const m of value.matchAll(/-?\d[\d,]*(?:\.\d+)?/g)) {
+      const n = Number(m[0].replace(/,/g, ''));
+      if (Number.isFinite(n)) into.add(n);
+    }
+    return;
+  }
   if (typeof value === 'number') {
     into.add(value);
     return;
