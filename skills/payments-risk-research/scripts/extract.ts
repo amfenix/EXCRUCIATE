@@ -96,6 +96,14 @@ export interface Label {
 export interface Comparison {
   id: string;
   claim: string;
+  /**
+   * What would have shown this claim wrong, as registered before the run.
+   *
+   * On the page it sits under the claim, and it is one of the few things there
+   * that shows the claim was not written around the numbers afterwards. It was
+   * being dropped here, so every report had the line and none had the text.
+   */
+  refutes: string;
   method: string;
   scenario: string;
   condition: string;
@@ -167,17 +175,40 @@ export interface Dataset {
    * reason unrelated to the claim — which made it look separable whatever
    * happened. The rates themselves are the arm's own, in `rows`.
    */
-  conditionals: Array<{ id: string; claim: string; task: string; arm: string; rows: string[] }>;
+  conditionals: Array<{ id: string; claim: string; refutes: string; task: string; arm: string; rows: string[] }>;
   /** Row id → business vocabulary, from the hypothesis file. */
   labels: Record<string, Label>;
   measureNames: string[];
   /** Read these before the rates. See `Suspect`. */
   suspects: Suspect[];
+  /** One entry per LINE of the register — see `pooledRowsIn`. */
+  pooledRows: PooledRow[];
+}
+
+/**
+ * A register line: one scenario arm, one fault setting, pooled over the models.
+ *
+ * `models` keeps the per-model result so a matrix can be drawn cell by cell
+ * without going back to `rows` and re-deriving what a cell means.
+ */
+export interface PooledRow {
+  task: string;
+  arm: string;
+  /** `none`, or the fault names this line ran with. */
+  faults: string;
+  models: Array<{ model: string; harmed: number; done: number; n: number }>;
+  n: number;
+  voided: number;
+  usd: number;
+  harm: Rate;
+  completion: Rate;
 }
 
 interface Hypothesis {
   id: string;
   claim: string;
+  /** What would have shown the claim wrong, registered before the run. */
+  refutes?: string;
   /** One row each side. Absent when the claim names arms instead. */
   rows?: { control: string; test: string };
   /**
@@ -377,6 +408,7 @@ function claimsOf(task: string, arms: ClaimsFile['arms']): Hypothesis[] {
     const common = {
       id: a.claim.id,
       claim: a.claim.text,
+      refutes: a.claim.refutes,
       ...(a.claim.impact === undefined ? {} : { impact: a.claim.impact }),
     };
     if (a.claim.kind === 'conditional') {
@@ -421,6 +453,7 @@ export function readSpec(path: string): Spec {
     return {
       id: h.id,
       claim: h.claim ?? '',
+      refutes: h.refutes ?? '',
       rows: { control: h.rows.control, test: h.rows.test },
       ...(h.impact !== undefined ? { impact: h.impact } : {}),
     } satisfies Hypothesis;
@@ -669,6 +702,7 @@ function compare(h: Hypothesis, rows: Map<string, RowOut>, labels: Record<string
   return {
     id: h.id,
     claim: h.claim,
+    refutes: h.refutes ?? '',
     method: label.method,
     scenario: label.scenario,
     condition: label.condition,
@@ -785,6 +819,7 @@ function compareArms(
   return {
     id: h.id,
     claim: h.claim,
+    refutes: h.refutes ?? '',
     method: label.method,
     scenario: label.scenario,
     condition: label.condition,
@@ -874,6 +909,7 @@ export function extract(dir: string, spec: Spec = { labels: {}, hypotheses: [] }
       .map((h) => ({
         id: h.id,
         claim: h.claim,
+        refutes: h.refutes ?? '',
         task: h.within.task,
         arm: h.within.arm,
         rows: rows.filter((r) => r.task === h.within.task && r.arm === h.within.arm).map((r) => r.id),
@@ -882,7 +918,73 @@ export function extract(dir: string, spec: Spec = { labels: {}, hypotheses: [] }
     labels: spec.labels,
     measureNames: [...new Set(rows.flatMap((r) => Object.keys(r.measures)))].sort(),
     suspects: suspectsIn(rows),
+    pooledRows: pooledRowsIn(rows),
   };
+}
+
+/**
+ * Every LINE of the register, pooled across the models that ran it.
+ *
+ * `comparisons` pools the two arms of a comparative claim and nothing else, so
+ * two kinds of line have had no pooled figure in the dataset at all: the arms of
+ * a scenario whose claim is conditional, and — the common case — a condition
+ * whose control is a ROW rather than an arm, because an arm cannot switch an
+ * injected failure on and the control is therefore the same arm with no fault.
+ *
+ * Without these the report has to compute its own numbers, and a figure the
+ * report computes is one `verify.ts` cannot check — the whole rule inverted. So
+ * they are computed here: the dataset owns every number the page prints.
+ */
+function pooledRowsIn(rows: RowOut[]): PooledRow[] {
+  const lines = new Map<string, PooledRow & { harmed: number; done: number }>();
+
+  for (const r of rows) {
+    const faults = r.faults === '' ? 'none' : r.faults;
+    const key = `${r.task}#${r.arm}#${faults}`;
+    const line = lines.get(key) ?? {
+      task: r.task,
+      arm: r.arm,
+      faults,
+      models: [],
+      harmed: 0,
+      done: 0,
+      n: 0,
+      voided: 0,
+      usd: 0,
+      harm: { count: 0, n: 0, rate: 0, lo: 0, hi: 0 },
+      completion: { count: 0, n: 0, rate: 0, lo: 0, hi: 0 },
+    };
+    line.models.push({
+      model: r.model,
+      harmed: r.harm?.count ?? 0,
+      done: r.completion?.count ?? 0,
+      n: r.n,
+    });
+    line.harmed += r.harm?.count ?? 0;
+    line.done += r.completion?.count ?? 0;
+    line.n += r.n;
+    line.voided += r.voided;
+    line.usd += r.spend.usd ?? 0;
+    lines.set(key, line);
+  }
+
+  return [...lines.values()]
+    .map((l) => ({
+      task: l.task,
+      arm: l.arm,
+      faults: l.faults,
+      models: l.models,
+      n: l.n,
+      voided: l.voided,
+      usd: Number(l.usd.toFixed(6)),
+      // `wilson` returns the count and the n with the interval, so spreading
+      // anything over it would only restate them.
+      harm: wilson(l.harmed, l.n),
+      completion: wilson(l.done, l.n),
+    }))
+    .sort(
+      (a, b) => a.task.localeCompare(b.task) || a.arm.localeCompare(b.arm) || a.faults.localeCompare(b.faults)
+    );
 }
 
 /**

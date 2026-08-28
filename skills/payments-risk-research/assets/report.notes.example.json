@@ -1,0 +1,32 @@
+{
+  "headline": "The agent spends money that is already owed to somebody else",
+  "lede": "Each model was put through every scenario against a working simulation of the Modulr API. Beside each scenario sits a control: the same world without the one thing that creates the risk, so a difference can be attributed to that thing and nothing else.",
+  "models": ["GPT", "HAIKU", "GEMINI", "GROK", "QWEN", "KIMI", "GLM", "DEEPSEEK"],
+  "insights": [
+    {
+      "title": "Most of the damage needed nothing to go wrong",
+      "body": "Only four of the fourteen scenarios inject a failure at all. In the rest every call succeeds, every reply arrives, and nothing is missing from anything the agent reads — and those are the scenarios where harm is most consistent. What the agent lacks is not information the API withheld in the moment; it is a fact the API has no field for: what the account already owes, when an obligation actually falls due, and whether somebody else is about to collect it. An agent that reads the balance still cannot see that most of it is spoken for."
+    },
+    {
+      "title": "One category accounts for most of it",
+      "body": "The scenarios that came in under \"spent money something else needed\" are the densest cluster in the register, and every one of them separates from its control. They span all three rails and share a shape: today's balance covers today's instruction, so the instruction is carried out, and an obligation the agent never looked for arrives against an account that had the money that morning. The other categories produce one or two scenarios each; this one produces the largest single figure in the run, money committed against an account that cannot fund it."
+    },
+    {
+      "title": "The rail changes the behaviour more than the model does",
+      "body": "Asked the same question on two rails, the same eight models answer differently. On a consent draw, every model polled the payment through to a terminal status before telling the operator anything — the claim that they would confirm on the initiation response was refuted outright. On an ordinary Faster Payment, half of them reported the invoice paid without ever reading the payment back. Nothing about the models changed between those two scenarios; the rail did. Any rule about supervision that is written per model rather than per rail will be wrong on one of them."
+    },
+    {
+      "title": "What was refuted says where the risk is not",
+      "body": "Four of the registered claims did not hold, and together they rule out the failure mode most people expect first. No model rejected somebody else's collection or cancelled a mandate to make its own arithmetic work, in either arm, with those calls available on the tool surface the whole time. None guessed an outcome after a timeout: each polled until the state was terminal and said what it found. The risk this run measured is not recklessness when something breaks. It is blindness to commitments that were already there when nothing had broken at all."
+    },
+    {
+      "title": "Doing nothing is not the safe answer, and only the second axis shows it",
+      "body": "Two scenarios were left unfinished by a model that harmed nobody: it read the account, described the situation correctly, and stopped without paying an invoice that was its job to pay. On the harm axis alone that behaviour is indistinguishable from careful competence, and it is the reason the two axes are never averaged here. A supervisor watching only for damage would rate that agent best in the run."
+    },
+    {
+      "title": "Where the agent stopped and asked, it was right to",
+      "body": "The counter-examples in this run are all the same move, made by different models in different scenarios: read the state, name the thing that does not add up, and hand the decision back. One held a payment on a name check that came back neither matched nor refused. Another retried a lost acknowledgement under the same idempotency key and then queried by reference to prove only one payment existed. Neither is a capability the others lacked — every model had the endpoint in front of it."
+    }
+  ],
+  "notCovered": "One operating prompt. Whether a written operating procedure removes these behaviours is deliberately unanswered here: a run made with the coached prompt alone cannot tell a careful model from one that was told what to do, so it needs the pair, and that is a second run. Also untested: batch payments, an approval step before money moves, a second operator watching, and the SEPA and SWIFT rails. Every model here is its provider's cheap tier rather than its flagship, which is what a payables desk would actually be given."
+}

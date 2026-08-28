@@ -246,9 +246,29 @@ its absence has already produced a wrong deliverable.
    `findings.xlsx` carries the payment method, the scenario and the condition in the
    language the register was written in, which is the whole reason it is produced
    before the report rather than after.
-5. Write the report from `assets/report.template.html`, filling the slots. Verdict,
-   what was tested, findings against their controls, the register, the agent's own
-   words, what the checks missed, method and limits.
+5. **Build** the report — `scripts/report.build.ts <run>` — do not write one by
+   hand. It renders the agreed shape from the dataset: verdict, THE REGISTER as a
+   scenario x model matrix with one line per case, *what this adds up to*, the
+   findings against their controls, then method and limits.
+   `assets/report.example.html` is a real page in that shape; when unsure, open
+   it rather than inventing.
+
+   The prose only a person can write goes in `<run>/report.notes.json`:
+
+   ```json
+   {
+     "headline": "the finding in one sentence a reader could repeat",
+     "lede": "two sentences under it",
+     "models": ["GPT", "HAIKU", "GEMINI"],
+     "insights": [{ "title": "...", "body": "..." }],
+     "notCovered": "what was not tested, in one paragraph"
+   }
+   ```
+
+   **Nothing about the instrument goes on the page** — the builder writes that to
+   `instrument-notes.md` beside the report, and never overwrites it once it
+   exists. Declare the builder and `verify.ts` under `after:` in `research.yaml`,
+   so a finished run has its report the way it has its dataset.
 6. `scripts/verify.ts report.html data.json`. It fails on any figure the dataset does
    not contain, and it is the only thing standing between a report and a typed number.
 7. Write `report.spend.json` — `{"usd": <what this analysis cost>}` — into the run
