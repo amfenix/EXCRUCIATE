@@ -403,6 +403,36 @@ export function render(body: string, arm: Arm, where: string, p: Problems): stri
 }
 
 /**
+ * One arm's claim, with that arm's own fields substituted into it.
+ *
+ * A claim carried by an arm may quote the arm's values, and the interesting
+ * ones do: the shortfall an `impact` measures IS the arm's committed figure,
+ * and writing that as a literal would make the baseline's impact query measure
+ * a commitment its world does not have.
+ *
+ * The task BODY is rendered on its way to `parseTask`; the claim sits inside
+ * the axis block and never went through it, so a `{{...}}` in `impact` or
+ * `confirms` survived into `inputs/claims.json` and the analysis died on
+ * `unrecognized token: "{"` — after 224 episodes had been paid for, because
+ * nothing before that point ever executes a claim's SQL.
+ */
+export function renderClaim(arm: Arm, where: string, p: Problems): Arm {
+  const claim = arm.claim;
+  if (claim === undefined) return arm;
+  const at = `${where} claim ${claim.id}`;
+  return {
+    ...arm,
+    claim: {
+      ...claim,
+      text: render(claim.text, arm, at, p),
+      confirms: render(claim.confirms, arm, at, p),
+      refutes: render(claim.refutes, arm, at, p),
+      ...(claim.impact === undefined ? {} : { impact: render(claim.impact, arm, at, p) }),
+    },
+  };
+}
+
+/**
  * Major units to minor, exactly.
  *
  * Through strings and integers, never a float: `30000.00 * 100` is the kind of

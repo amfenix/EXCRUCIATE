@@ -20,7 +20,7 @@ import { fileRefsOf } from '../episode/text.ts';
 import { Problems } from './parse.ts';
 import { parseResearch } from './meta.ts';
 import { parseTask } from './task.ts';
-import { readArms, render } from './arms.ts';
+import { readArms, render, renderClaim } from './arms.ts';
 import type { Arm } from './arms.ts';
 import { manifestFor, narrow } from '../surface/manifest.ts';
 import { readWorkbook } from './workbook.ts';
@@ -145,7 +145,10 @@ async function readTasks(
     const where = wanted === '' ? `task ${row.task}` : `task ${row.task} arm ${wanted}`;
     const source = render(src.body, arm, where, p);
     rendered.set(key, source);
-    chosen.set(key, arm);
+    // The claim is rendered too, and here rather than at the point it is
+    // written out: everything downstream — `inputs/claims.json`, the analysis,
+    // anything that quotes a claim back — then sees SQL it can execute.
+    chosen.set(key, renderClaim(arm, where, p));
     tasks.set(key, parseTask(source, where, p, wanted));
   }
   return { tasks, rendered, arms: chosen };
