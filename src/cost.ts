@@ -17,8 +17,26 @@
  * prompt cache.
  */
 import { ensureEngine } from './agent.ts';
+import { isNebiusModel } from './nebius.ts';
 import { splitModel } from './preflight.ts';
 import type { Usage } from '@combycode/llm-sdk';
+
+/**
+ * Whether `reasoningTokens` is ALREADY inside `outputTokens` for this provider.
+ *
+ * Anthropic reports reasoning as 0 and bills it inside output; OpenAI reports it
+ * separately and bills it as output. Adding it works for both, which is why the
+ * sum below adds it — and why nobody noticed that Nebius does neither. It
+ * reports the reasoning as a SUBSET of what it already counted: one measured
+ * call came back `completion_tokens: 110, reasoning_tokens: 45`, and a truncated
+ * episode came back 4096 and 4096. Adding it there charges the thinking twice,
+ * which on a reasoning model is very nearly double the bill.
+ *
+ * Scoped to Nebius deliberately. The same question is open for xAI and
+ * OpenRouter and has NOT been measured here, and a guess would be the same
+ * mistake in the other direction.
+ */
+const reasoningInsideOutput = (model: string): boolean => isNebiusModel(model);
 
 /** What one model call, or a whole episode, consumed. */
 export interface Spend {
@@ -67,14 +85,17 @@ export function priceUsage(model: string, usage: Usage): Spend {
   // is Anthropic's `input_tokens`, which already excludes both cache reads and
   // cache writes. Netting them off instead under-bills every cached call — and
   // does so silently, because an uncached run agrees either way.
+  // Where a provider reports reasoning separately it bills as output. For
+  // Anthropic it arrives as 0, thinking already being inside `outputTokens`; for
+  // Nebius it arrives populated AND already inside, so it must not be added.
+  const reasoning = reasoningInsideOutput(model) ? 0 : usage.reasoningTokens;
+
   const usd =
     (usage.inputTokens * input +
       usage.cachedTokens * cacheRead +
       usage.cacheWriteTokens * cacheWrite +
       usage.outputTokens * output +
-      // Where a provider reports reasoning separately it bills as output. For
-      // Anthropic it arrives as 0, thinking already being inside `outputTokens`.
-      usage.reasoningTokens * output) /
+      reasoning * output) /
     1_000_000;
 
   return { ...tokens, usd };

@@ -19,7 +19,7 @@ otherwise silently ignored.
 |---|---|---|---|---|
 | `id` | **yes** | text | — | names the row and its artefacts (`<id>-1.sqlite`). Must be unique. |
 | `task` | **yes** | filename | — | the task file under `tasks/`, e.g. `pay-rent.yaml` |
-| `model` | **yes** | catalog id | — | `anthropic/claude-haiku-4.5`. See `excruciate models`. |
+| `model` | **yes** | catalog id | — | `anthropic/claude-haiku-4.5`, or `nebius/zai-org/GLM-5.2`. See `excruciate models`. |
 | `enabled` | no | `yes`/`no` | `yes` | `no` keeps the row and skips it |
 | `surface` | no | `tools`/`api`/`search` | research default | what the model sees |
 | `temperature` | no | decimal | provider default | mutually exclusive with `thinking` |

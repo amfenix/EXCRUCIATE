@@ -287,6 +287,28 @@ Model ids come from the catalog (`anthropic/claude-haiku-4.5`), and a bare
 provider string is not one — the catalog is where pricing and capabilities come
 from, so a model named any other way is not properly described.
 
+### Nebius
+
+Six providers are known: `anthropic`, `openai`, `google`, `xai`, `openrouter`
+and `nebius`. The first five are llm-sdk's; Nebius is reached through its
+OpenAI-compatible endpoint, and its catalog is a checked-in table rather than a
+live query — the run must work offline, and a price that moved between two runs
+of the same research would make their costs incomparable in silence.
+
+```sh
+excruciate keys set nebius
+excruciate models --provider nebius
+bun run scripts/nebius-catalog.ts       # refresh the table (--check in CI)
+```
+
+A Nebius id carries its vendor half: `nebius/moonshotai/Kimi-K3`,
+`nebius/zai-org/GLM-5.2`. Only models Nebius says support tools are listed,
+because every surface here is a tool surface.
+
+**Nebius will not fall back to the OpenAI key.** Its requests go out in OpenAI's
+wire format, so a missing Nebius key could otherwise post an OpenAI credential
+to a different company's server. A Nebius row without a Nebius key stops the run.
+
 ---
 
 Next: [workbook](workbook.md) · [tasks](tasks.md) · [results](results.md)

@@ -44,6 +44,7 @@
     "format:write": "biome format --write",
     "test": "bun test test",
     "build": "bun run scripts/build.ts",
+    "catalog:nebius": "bun run scripts/nebius-catalog.ts",
     "verify": "bun run lint && bun run typecheck && bun test test"
   },
   "devDependencies": {
@@ -53,7 +54,7 @@
     "typescript": "7.0.2"
   },
   "dependencies": {
-    "@combycode/llm-sdk": "2.2.2",
+    "@combycode/llm-sdk": "3.0.0",
     "exceljs": "4.4.0"
   },
   "peerDependencies": {

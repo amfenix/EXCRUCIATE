@@ -13,6 +13,7 @@
 import { listModels, listModelsLive, selectModels } from '@combycode/llm-sdk';
 import { ensureEngine } from '../agent.ts';
 import { KNOWN_PROVIDERS, resolveKey } from '../keys.ts';
+import { NEBIUS } from '../nebius.ts';
 import type { ModelInfo, ProviderName } from '@combycode/llm-sdk';
 
 export interface ModelsArgs {
@@ -31,6 +32,13 @@ export async function cmdModels(args: ModelsArgs): Promise<number> {
   if (args.live) {
     if (!args.provider) {
       console.error('error: --live needs --provider (it asks that provider what it currently serves)');
+      return 1;
+    }
+    if (args.provider === NEBIUS) {
+      // llm-sdk has no nebius provider to ask — ours is a checked-in table, and
+      // the script that regenerates it IS the live query.
+      console.error(`error: --live cannot ask ${NEBIUS}; its catalog is generated, not queried.`);
+      console.error('  bun run scripts/nebius-catalog.ts');
       return 1;
     }
     models = await listModelsLive({ provider: args.provider as ProviderName, engine });

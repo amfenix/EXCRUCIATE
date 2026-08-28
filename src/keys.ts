@@ -306,4 +306,4 @@ export function describeValue(value: string | null): string {
 }
 
 /** Providers worth checking by default. */
-export const KNOWN_PROVIDERS = ['anthropic', 'openai', 'google', 'xai', 'openrouter'] as const;
+export const KNOWN_PROVIDERS = ['anthropic', 'openai', 'google', 'xai', 'openrouter', 'nebius'] as const;

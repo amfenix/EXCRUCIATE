@@ -12,7 +12,7 @@
  * episode fourteen of twenty.
  */
 import { createAgent } from '@combycode/llm-sdk';
-import { ensureEngine } from './agent.ts';
+import { ensureEngine, launchOptions } from './agent.ts';
 import { FixtureError } from './errors.ts';
 import type { ThinkingConfig } from '@combycode/llm-sdk';
 import type { Episode } from './episode/types.ts';
@@ -111,7 +111,7 @@ export async function preflight(plans: Plan[]): Promise<PreflightResult[]> {
   for (const plan of plans) {
     try {
       const agent = createAgent({
-        model: plan.model,
+        ...launchOptions(plan.model),
         system: 'Reply with the single word: ok',
         maxTokens: 16,
         engine: ensureEngine(),
