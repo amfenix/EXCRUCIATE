@@ -20,6 +20,7 @@ import { readdirSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import { parseResearch } from '../research/meta.ts';
 import { parseTask } from '../research/task.ts';
+import { readArms, render } from '../research/arms.ts';
 import { Problems } from '../research/parse.ts';
 import { ResearchError } from '../research/types.ts';
 import { HEADER } from './init.ts';
@@ -27,6 +28,7 @@ import { normalise } from '../research/columns.ts';
 import { EXPERIMENTS_SHEET, episodesSheetOf } from '../research/workbook.ts';
 import { chooseMany, interactive, line, slug } from './prompt.ts';
 import type { Task } from '../research/types.ts';
+import type { Arm } from '../research/arms.ts';
 
 const SURFACES = ['tools', 'api', 'search'] as const;
 const MEMORIES = ['session', 'fresh'] as const;
@@ -47,6 +49,8 @@ export interface MatrixArgs {
 
 interface Cell {
   task: string;
+  /** The arm of the task's axis this row runs. Empty when the task declares none. */
+  arm: string;
   model: string;
   surface: string;
   memory: string;
@@ -69,11 +73,29 @@ export async function cmdMatrix(args: MatrixArgs): Promise<number> {
     return 1;
   }
 
+  // READ THROUGH THE ARMS READER, not straight into `parseTask`.
+  //
+  // A task file with an `axis:` block is not valid on its own — the body is full
+  // of `{{axis.field}}` templates and the block itself is not a task key. Parsing
+  // the raw text refused every scenario in the corpus with `unknown key "axis"`,
+  // which went unnoticed because the workbooks predate arms and nobody had run
+  // this command since.
+  //
+  // The BASELINE arm is what the matrix reads: the faults a task declares and the
+  // tool sets it offers are properties of the scenario, identical across arms.
   const tasks = new Map<string, Task>();
-  for (const file of files) tasks.set(file, parseTask(await Bun.file(resolve(taskDir, file)).text(), file, p));
+  const arms = new Map<string, Arm[]>();
+  for (const file of files) {
+    const source = await Bun.file(resolve(taskDir, file)).text();
+    const read = readArms(source, file, p);
+    arms.set(file, read.arms);
+    const baseline = read.arms.find((a) => a.baseline) ?? read.arms[0];
+    if (baseline === undefined) continue;
+    tasks.set(file, parseTask(render(read.body, baseline, file, p), file, p, baseline.name));
+  }
   if (!p.ok) throw new ResearchError(p.list);
 
-  const cells = await plan(args, meta.surface, files, tasks);
+  const cells = await plan(args, meta.surface, files, tasks, arms);
   if (cells.length === 0) {
     console.error('error: nothing selected');
     return 1;
@@ -107,15 +129,21 @@ async function plan(
   args: MatrixArgs,
   defaultSurface: string,
   files: string[],
-  tasks: Map<string, Task>
+  tasks: Map<string, Task>,
+  arms: Map<string, Arm[]>
 ): Promise<Cell[]> {
   const axes = await axesOf(args, defaultSurface, files);
   const cells: Cell[] = [];
-  // Faults are per-task — each case declares its own by name — so they cross
-  // inside the loop rather than being one more axis of the whole matrix.
+  // Faults and arms are both per-task — each scenario declares its own — so they
+  // cross inside the loop rather than being one more axis of the whole matrix.
+  // Every arm gets a row: a condition nobody generated is a condition nobody runs,
+  // and the control is an arm like any other.
   for (const task of axes.tasks) {
     const faultSets = await faultSetsFor(task, args, tasks);
-    cells.push(...cellsFor(task, faultSets, await toolSetsFor(task, args, tasks), axes));
+    const names = (arms.get(task) ?? []).map((a) => a.name);
+    for (const arm of names.length === 0 ? [''] : names) {
+      cells.push(...cellsFor(task, arm, faultSets, await toolSetsFor(task, args, tasks), axes));
+    }
   }
   return cells;
 }
@@ -180,7 +208,7 @@ async function faultSetsFor(task: string, args: MatrixArgs, tasks: Map<string, T
   return [...new Set(['none', ...wanted])];
 }
 
-const cellsFor = (task: string, faultSets: string[], toolSets: string[], axes: Axes): Cell[] =>
+const cellsFor = (task: string, arm: string, faultSets: string[], toolSets: string[], axes: Axes): Cell[] =>
   product([
     axes.models,
     axes.surfaces,
@@ -191,6 +219,7 @@ const cellsFor = (task: string, faultSets: string[], toolSets: string[], axes: A
     toolSets,
   ]).map(([model, surface, memory, temperature, thinking, faults, tools]) => ({
     task,
+    arm,
     model: model!,
     surface: surface!,
     memory: memory!,
@@ -228,6 +257,7 @@ const idOf = (c: Cell): string =>
     [
       basename(c.task).replace(/\.ya?ml$/, ''),
       c.model.split('/').pop() ?? c.model,
+      c.arm,
       c.surface,
       c.memory,
       c.temperature === '' ? '' : `t${c.temperature}`,
@@ -250,6 +280,7 @@ function valuesFor(cell: Cell, id: string, repeat: string): Record<string, strin
     id,
     enabled: 'yes',
     task: cell.task,
+    arm: cell.arm,
     model: cell.model,
     surface: cell.surface,
     temperature: cell.temperature,
