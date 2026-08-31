@@ -462,7 +462,16 @@ const collected: Finding[] = [
   }),
 ];
 
+/**
+ * How many findings separate, out of how many there are.
+ *
+ * Both halves have to count the same population. The numerator was every
+ * finding — comparisons AND the claims whose control is a row — while the
+ * denominator was `comparisons.length` alone, so a page with five of the latter
+ * announced "8 of 7" in its own headline.
+ */
 const separating = collected.filter((f) => f.separable).length;
+const findingCount = collected.length;
 
 const findings = [...collected]
   .sort((a, b) => Number(b.separable) - Number(a.separable) || harmCount(b) - harmCount(a))
@@ -537,7 +546,7 @@ ${style}
         an agent that does nothing causes no harm and is no use.</p>
       <div class="strip strip-3">
         <div><b>${scenarioCount}</b><span>payment scenarios</span></div>
-        <div><b class="loss">${separating} of ${data.comparisons.length}</b><span>behaviours that separate from their control</span></div>
+        <div><b class="loss">${separating} of ${findingCount}</b><span>behaviours that separate from their control</span></div>
         <div><b>${data.run.scored}</b><span>runs scored</span></div>
       </div>
       <p class="cost">Model spend for the run: <b>$${(data.run.spend.usd ?? 0).toFixed(2)}</b>.</p>
